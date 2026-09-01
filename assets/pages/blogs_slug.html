@@ -1,6 +1,18 @@
-{% include "website/header.html" %}
+{% set slug_value = slug() %}
+{% set blogs = query_where("blogs", "slug = ?", slug_value) %}
+{% set blog = first(blogs) %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<title>Lariv — Engineering Blog</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if blog %}{{ blog.title | e }} — Lariv{% else %}Lariv — Engineering Blog{% endif %}</title>
+{% if blog and blog.description %}
+<meta name="description" content="{{ blog.description | e }}">
+{% endif %}
+</head>
+<body>
+{% include "website/header.html" %}
 
 <div class="reading-progress-container">
 	<div class="reading-progress-bar" id="readingProgress"></div>
@@ -12,10 +24,6 @@
 	</svg>
 	<span id="copy-toast-message">Copied to clipboard!</span>
 </div>
-
-{% set slug_value = slug() %}
-{% set blogs = query_where("blogs", "slug = ?", slug_value) %}
-{% set blog = first(blogs) %}
 
 {% if blog %}
 <section class="article-hero">
@@ -200,3 +208,5 @@
 </section>
 {% endif %}
 {% include "website/footer.html" %}
+</body>
+</html>
