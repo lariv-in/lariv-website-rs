@@ -1,0 +1,71 @@
+{% include "website/header.html" %}
+<meta charset="utf-8">
+<title>Lariv — Engineering Blog</title>
+
+<section class="gjs-hero hero hero-compact" data-gjs-type="p_website.hero" data-show-media="false" data-show-button="false">
+	<div class="gjs-hero-inner hero-inner" data-gjs-type="p_website.hero-inner">
+		<div class="container">
+			<span class="badge">Insights &amp; Updates</span>
+			<h1 class="gjs-hero-title hero-title">Engineering <span class="gradient-text">Blog</span></h1>
+			<p class="gjs-hero-lead lead">Deep dives into modular backend architecture, SaaS consolidation, and building high-performance applications.</p>
+		</div>
+	</div>
+</section>
+
+<section class="gjs-section section" data-gjs-type="p_website.section" data-section-bg="base">
+	<div class="gjs-section-inner container">
+		{% set blogs = query("blogs", 20, 0) %}
+		{% if blogs %}
+		<div class="blog-grid" id="blog-posts-grid">
+			{% for blog in blogs %}
+			<article class="blog-card" id="blog-card-{{ blog.id }}">
+				<div>
+					<div style="padding-bottom: 1rem">
+						<h2>{{ blog.title }}</h2>
+						{% if blog.created_at %}
+						<time datetime="{{ blog.created_at }}">{{ blog.created_at | format_datetime }}</time>
+						{% endif %}
+					</div>
+					<div class="blog-excerpt">
+						{% if blog.description %}{{ blog.description }}{% else %}{{ blog.content }}{% endif %}
+					</div>
+					{% set tags = m2m_list("blogs", "p_blog_tags", "blog_tags", blog.id) %}
+					{% if tags %}
+					<div class="blog-tags">
+						{% for tag in tags %}
+						<span class="blog-tag">#{{ tag.name }}</span>
+						{% endfor %}
+					</div>
+					{% endif %}
+				</div>
+				<div class="blog-card-footer">
+					<span style="font-size: 0.85rem; color: var(--text-dark); font-weight: 500;">
+						{% set author = m2o("blogs", "users", blog.id) %}
+						{% if author %}
+							{% if author.name %}{{ author.name }}{% else %}{{ author.email }}{% endif %}
+						{% else %}
+							Author ID: {{ blog.created_by_id }}
+						{% endif %}
+					</span>
+					<a class="blog-read" href="/blogs/{{ blog.slug or blog.id }}" id="read-blog-{{ blog.id }}">Read Article →</a>
+				</div>
+			</article>
+			{% endfor %}
+		</div>
+		{% else %}
+		<div class="empty-state" id="blog-empty-state">
+			<div class="empty-state-icon">
+				<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+					<polyline points="14 2 14 8 20 8"></polyline>
+					<line x1="16" y1="13" x2="8" y2="13"></line>
+					<line x1="16" y1="17" x2="8" y2="17"></line>
+				</svg>
+			</div>
+			<h3>No Blog Posts Yet</h3>
+			<p>There are currently no published blog posts. Check back soon for technical articles, engineering updates, and system architectural deep-dives.</p>
+		</div>
+		{% endif %}
+	</div>
+</section>
+{% include "website/footer.html" %}

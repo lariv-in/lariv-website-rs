@@ -1,0 +1,111 @@
+{% include "website/header.html" %}
+<meta charset="utf-8">
+<title>Lariv — Engineering Blog</title>
+
+<div class="reading-progress-container">
+	<div class="reading-progress-bar" id="readingProgress"></div>
+</div>
+<div id="copy-toast" class="copy-toast">
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+		<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+		<polyline points="22 4 12 14.01 9 11.01"></polyline>
+	</svg>
+	<span id="copy-toast-message">Copied to clipboard!</span>
+</div>
+
+{% set slug_value = slug() %}
+{% set blogs = query_where("blogs", "slug = ?", slug_value) %}
+{% set blog = first(blogs) %}
+
+{% if blog %}
+<section class="article-hero">
+	<div class="article-container">
+		<a href="/blogs" class="back-link" id="back-to-blogs">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<line x1="19" y1="12" x2="5" y2="12"></line>
+				<polyline points="12 19 5 12 12 5"></polyline>
+			</svg>
+			Back to all articles
+		</a>
+		<h1 class="article-title">
+			{% set tags = m2m_list("blogs", "p_blog_tags", "blog_tags", blog.id) %}
+			{% if tags %}
+			<div class="article-tags">
+				{% for tag in tags %}
+				<span class="tag-pill">#{{ tag.name }}</span>
+				{% endfor %}
+			</div>
+			{% endif %}
+			{{ blog.title }}
+		</h1>
+		<div class="article-meta">
+			<div class="meta-author-group">
+				<div class="author-info">
+					<span class="author-name">
+						{% set author = m2o("blogs", "users", blog.id) %}
+						{% if author %}
+							{% if author.name %}{{ author.name }}{% else %}{{ author.email }}{% endif %}
+						{% else %}
+							Author #{{ blog.created_by_id }}
+						{% endif %}
+					</span>
+				</div>
+			</div>
+			<div class="meta-details">
+				{% if blog.created_at %}
+				<span class="meta-item">
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<rect x="3" y="4" width="18" height="18" rx="2"></rect>
+						<line x1="16" y1="2" x2="16" y2="6"></line>
+						<line x1="8" y1="2" x2="8" y2="6"></line>
+						<line x1="3" y1="10" x2="21" y2="10"></line>
+					</svg>
+					<time datetime="{{ blog.created_at }}">{{ blog.created_at | format_datetime }}</time>
+				</span>
+				<span class="meta-divider">&bull;</span>
+				{% endif %}
+				<span class="meta-item" id="reading-time-container">
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<circle cx="12" cy="12" r="10"></circle>
+						<polyline points="12 6 12 12 16 14"></polyline>
+					</svg>
+					<span id="reading-time-display">2 min read</span>
+				</span>
+				<span class="meta-divider">&bull;</span>
+				<button type="button" class="share-btn" id="share-btn" data-copy-article>Share</button>
+			</div>
+		</div>
+	</div>
+</section>
+
+<section style="padding-bottom: 6rem;">
+	<div class="article-container">
+		{% if blog.description %}
+		<div class="article-lead">{{ blog.description | markdown_unsafe }}</div>
+		{% endif %}
+		<article class="article-body">{{ blog.content | markdown_unsafe }}</article>
+		<div class="article-footer-nav">
+			<a href="/blogs" class="btn btn-secondary">← Back to All Articles</a>
+			<button type="button" class="btn btn-primary" id="footer-share-btn" data-copy-article>Copy Share Link</button>
+		</div>
+	</div>
+</section>
+{% else %}
+<section style="padding-top: 10rem; padding-bottom: 6rem;">
+	<div class="article-container">
+		<div class="not-found-card">
+			<div class="not-found-icon">
+				<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<circle cx="12" cy="12" r="10"></circle>
+					<line x1="12" y1="8" x2="12" y2="12"></line>
+					<line x1="12" y1="16" x2="12.01" y2="16"></line>
+				</svg>
+			</div>
+			<h1>Article Not Found</h1>
+			<p>The blog post you are looking for does not exist or may have been moved.</p>
+			<a href="/blogs" class="btn btn-primary">← Return to Engineering Blog</a>
+		</div>
+	</div>
+</section>
+{% endif %}
+{% include "website/footer.html" %}

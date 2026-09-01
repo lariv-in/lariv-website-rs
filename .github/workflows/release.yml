@@ -1,0 +1,38 @@
+name: release
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install rust nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-08-27
+
+      - name: rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: "Release-Cache"
+          add-rust-environment-hash-key: false
+
+      - name: build release binary
+        run: cargo build --release
+
+      - name: create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/lariv-website-rs
+          generate_release_notes: true
