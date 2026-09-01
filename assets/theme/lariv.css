@@ -872,6 +872,42 @@ footer.site-footer {
 	text-decoration: none;
 }
 
+.article-body .perf-card {
+	background: #ffffff;
+	border: 1px solid var(--border-muted);
+	border-radius: 12px;
+	padding: 1.25rem;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+.article-body .perf-pair {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+	gap: 1.5rem;
+	margin: 1rem 0 2rem;
+}
+
+.article-body .perf-card h4 {
+	font-size: 1.1rem;
+	margin-bottom: 1rem;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	border: none;
+	padding: 0;
+}
+
+.article-body .perf-card h4 .perf-hint {
+	font-size: 0.8rem;
+	font-weight: 500;
+	color: var(--text-dark);
+}
+
+.article-source {
+	text-align: center;
+	margin: 2rem 0;
+}
+
 /* Pricing */
 .gjs-pricing,
 .pricing-cards-grid {

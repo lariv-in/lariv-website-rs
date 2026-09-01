@@ -90,6 +90,97 @@
 		</div>
 	</div>
 </section>
+<script>
+(function () {
+	function avgRps(stats) {
+		if (!stats) return 0;
+		var value = stats.AvgRps != null ? stats.AvgRps : stats.AvgRPS;
+		return Math.round(Number(value) || 0);
+	}
+	function avgLatencyMs(stats) {
+		if (!stats || stats.AvgLatency == null) return 0;
+		return Number(stats.AvgLatency) / 1e6;
+	}
+	function emptyBars(message) {
+		return '<div style="color: var(--text-dark); padding: 2rem 0; text-align: center;">' + message + "</div>";
+	}
+	function collapseTargets(entries) {
+		var targetMap = {};
+		entries.forEach(function (item) {
+			var name = String(item.target || "").replace(" Local Server", "");
+			if (!targetMap[name] || (item.duration && String(item.duration).indexOf("1m") !== -1)) {
+				targetMap[name] = {
+					name: name,
+					isLariv: name.indexOf("Lariv") !== -1,
+					rps: avgRps(item.stats),
+					latencyMs: avgLatencyMs(item.stats).toFixed(2)
+				};
+			}
+		});
+		var list = Object.keys(targetMap).map(function (k) { return targetMap[k]; });
+		list.sort(function (a, b) { return a.isLariv === b.isLariv ? 0 : a.isLariv ? 1 : -1; });
+		return list;
+	}
+	function renderBarList(container, list, valueKey, maxValue) {
+		if (!container) return;
+		container.innerHTML = list.map(function (item) {
+			var value = valueKey === "rps" ? item.rps : parseFloat(item.latencyMs);
+			var pct = Math.min(100, Math.round((value / maxValue) * 100));
+			var fillClass = item.isLariv ? "bar-fill-lariv" : "bar-fill-other";
+			var label = valueKey === "rps" ? item.rps.toLocaleString() + " req/s" : item.latencyMs + " ms";
+			return '<div class="bar-item"><div class="bar-header"><span>' + item.name +
+				"</span><span>" + label + '</span></div><div class="bar-track"><div class="bar-fill ' +
+				fillClass + '" style="width: ' + pct + '%;"></div></div></div>';
+		}).join("");
+	}
+	function stillLoading() {
+		var el = document.querySelector("[id*='-rps-bars-']");
+		return !!(el && el.textContent.indexOf("Loading benchmark") !== -1);
+	}
+	async function load() {
+		if (!document.querySelector("[id*='-rps-bars-'], [data-article-benchmark]")) return;
+		if (!stillLoading() && window.__larivArticleBenchmarksRendered) return;
+		var sources = [
+			"/static/benchmark_metrics.json",
+			"https://raw.githubusercontent.com/UniquityVentures/benchmarks/main/benchmark_metrics.json"
+		];
+		var data = null;
+		for (var i = 0; i < sources.length; i++) {
+			try {
+				var res = await fetch(sources[i]);
+				if (!res.ok) continue;
+				data = await res.json();
+				if (data) break;
+			} catch (err) {
+				console.warn("Unable to fetch benchmark results from", sources[i], err);
+			}
+		}
+		if (!data) return;
+		["counter", "crud", "task"].forEach(function (cat) {
+			var rows = Array.isArray(data[cat]) ? data[cat] : [];
+			[1, 50, 500].forEach(function (workers) {
+				var entries = rows.filter(function (item) { return item.workers === workers; });
+				var rpsContainer = document.getElementById(cat + "-rps-bars-" + workers);
+				var latencyContainer = document.getElementById(cat + "-latency-bars-" + workers);
+				if (!rpsContainer && !latencyContainer) return;
+				if (entries.length === 0) {
+					if (rpsContainer) rpsContainer.innerHTML = emptyBars("No benchmark metrics available.");
+					if (latencyContainer) latencyContainer.innerHTML = emptyBars("No benchmark metrics available.");
+					return;
+				}
+				var list = collapseTargets(entries);
+				var maxRPS = Math.max.apply(null, list.map(function (i) { return i.rps; }).concat([1]));
+				var maxLatency = Math.max.apply(null, list.map(function (i) { return parseFloat(i.latencyMs); }).concat([0.001]));
+				renderBarList(rpsContainer, list, "rps", maxRPS);
+				renderBarList(latencyContainer, list, "latency", maxLatency);
+			});
+		});
+		window.__larivArticleBenchmarksRendered = true;
+	}
+	if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load);
+	else load();
+})();
+</script>
 {% else %}
 <section style="padding-top: 10rem; padding-bottom: 6rem;">
 	<div class="article-container">

@@ -84,33 +84,78 @@ struct PageSeed {
     name: &'static str,
     html: &'static str,
     path: &'static str,
+    dir: &'static [&'static str],
 }
+
+const HOMEPAGE_HTML: &str = include_str!("../assets/pages/index.html");
+const WEBSITE_DIR: &[&str] = &["website"];
+const PAGES_DIR: &[&str] = &["website", "pages"];
 
 const PAGES: &[PageSeed] = &[
     PageSeed {
         name: "index.html",
-        html: include_str!("../assets/pages/index.html"),
+        html: HOMEPAGE_HTML,
         path: "/",
+        dir: PAGES_DIR,
+    },
+    PageSeed {
+        name: "landing.html",
+        html: HOMEPAGE_HTML,
+        path: "/",
+        dir: WEBSITE_DIR,
     },
     PageSeed {
         name: "pricing.html",
         html: include_str!("../assets/pages/pricing.html"),
         path: "/pricing",
+        dir: PAGES_DIR,
     },
     PageSeed {
         name: "blogs.html",
         html: include_str!("../assets/pages/blogs.html"),
         path: "/blogs",
+        dir: PAGES_DIR,
     },
     PageSeed {
         name: "blogs_slug.html",
         html: include_str!("../assets/pages/blogs_slug.html"),
         path: "/blogs/*",
+        dir: PAGES_DIR,
     },
     PageSeed {
         name: "privacy-policy.html",
         html: include_str!("../assets/pages/privacy-policy.html"),
         path: "/privacy-policy",
+        dir: PAGES_DIR,
+    },
+];
+
+/// Go-site filenames at `website/*.html`. Seeded last so existing `/` routes
+/// that still point at `landing.html` pick up Minijinja markup in place.
+const GO_COMPAT_PAGES: &[PageSeed] = &[
+    PageSeed {
+        name: "pricing.html",
+        html: include_str!("../assets/pages/pricing.html"),
+        path: "/pricing",
+        dir: WEBSITE_DIR,
+    },
+    PageSeed {
+        name: "blogs.html",
+        html: include_str!("../assets/pages/blogs.html"),
+        path: "/blogs",
+        dir: WEBSITE_DIR,
+    },
+    PageSeed {
+        name: "blogs_slug.html",
+        html: include_str!("../assets/pages/blogs_slug.html"),
+        path: "/blogs/*",
+        dir: WEBSITE_DIR,
+    },
+    PageSeed {
+        name: "privacy-policy.html",
+        html: include_str!("../assets/pages/privacy-policy.html"),
+        path: "/privacy-policy",
+        dir: WEBSITE_DIR,
     },
 ];
 
@@ -129,11 +174,12 @@ async fn ensure_site_state(db: &DatabaseConnection, store: &DynFilestore) -> any
             .await?;
     let refs_changed = header_rewritten || footer_rewritten;
 
-    for page in PAGES {
+    for page in PAGES.iter().chain(GO_COMPAT_PAGES.iter()) {
+        let dir: Vec<String> = page.dir.iter().map(|s| (*s).to_string()).collect();
         let (vnode, page_rewritten) = ensure_named_html(
             db,
             store,
-            &["website".into(), "pages".into()],
+            &dir,
             page.name,
             page.html,
             &media_urls,
@@ -146,6 +192,7 @@ async fn ensure_site_state(db: &DatabaseConnection, store: &DynFilestore) -> any
             path = page.path,
             page_id = vnode.id,
             route_id,
+            name = page.name,
             "lariv website: page route ready"
         );
     }

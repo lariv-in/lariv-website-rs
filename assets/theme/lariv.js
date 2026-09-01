@@ -149,6 +149,29 @@
     return '<div style="color: var(--text-dark); padding: 2rem 0; text-align: center;">' + message + "</div>";
   }
 
+  function collapseTargets(entries) {
+    var targetMap = {};
+    entries.forEach(function (item) {
+      var name = String(item.target || "").replace(" Local Server", "");
+      var mapKey = item.stage ? item.target + "_" + item.stage : name;
+      if (!targetMap[mapKey] || (item.duration && String(item.duration).indexOf("1m") !== -1)) {
+        targetMap[mapKey] = {
+          name: name,
+          isLariv: name.indexOf("Lariv") !== -1,
+          rps: avgRps(item.stats),
+          latencyMs: avgLatencyMs(item.stats).toFixed(2),
+        };
+      }
+    });
+    var list = Object.keys(targetMap).map(function (k) {
+      return targetMap[k];
+    });
+    list.sort(function (a, b) {
+      return a.isLariv === b.isLariv ? 0 : a.isLariv ? 1 : -1;
+    });
+    return list;
+  }
+
   function renderBarList(container, list, valueKey, suffix, maxValue) {
     if (!container) return;
     container.innerHTML = list
@@ -217,26 +240,7 @@
       return;
     }
 
-    var targetMap = {};
-    entries.forEach(function (item) {
-      var name = String(item.target || "").replace(" Local Server", "");
-      var mapKey = item.stage ? item.target + "_" + item.stage : name;
-      if (!targetMap[mapKey] || (item.duration && String(item.duration).indexOf("1m") !== -1)) {
-        targetMap[mapKey] = {
-          name: name,
-          isLariv: name.indexOf("Lariv") !== -1,
-          rps: avgRps(item.stats),
-          latencyMs: avgLatencyMs(item.stats).toFixed(2),
-        };
-      }
-    });
-
-    var list = Object.keys(targetMap).map(function (k) {
-      return targetMap[k];
-    });
-    list.sort(function (a, b) {
-      return a.isLariv === b.isLariv ? 0 : a.isLariv ? 1 : -1;
-    });
+    var list = collapseTargets(entries);
 
     var maxRPS = Math.max.apply(
       null,
@@ -255,10 +259,52 @@
     renderBarList(latencyContainer, list, "latency", " ms", maxLatency);
   }
 
+  function hasArticleBenchmarkCharts() {
+    return !!document.querySelector(
+      "[data-article-benchmark], [id*='-rps-bars-'], [id*='-latency-bars-']"
+    );
+  }
+
+  function renderArticleBenchmarkCharts() {
+    if (!rawBenchmarkData || !hasArticleBenchmarkCharts()) return;
+    ["counter", "crud", "task"].forEach(function (cat) {
+      [1, 50, 500].forEach(function (workers) {
+        var entries = categoryData(cat).filter(function (item) {
+          return item.workers === workers;
+        });
+        var rpsContainer = document.getElementById(cat + "-rps-bars-" + workers);
+        var latencyContainer = document.getElementById(cat + "-latency-bars-" + workers);
+        if (!rpsContainer && !latencyContainer) return;
+        if (entries.length === 0) {
+          if (rpsContainer) rpsContainer.innerHTML = emptyBars("No benchmark metrics available.");
+          if (latencyContainer) latencyContainer.innerHTML = emptyBars("No benchmark metrics available.");
+          return;
+        }
+        var list = collapseTargets(entries);
+        var maxRPS = Math.max.apply(
+          null,
+          list.map(function (i) {
+            return i.rps;
+          }).concat([1])
+        );
+        var maxLatency = Math.max.apply(
+          null,
+          list.map(function (i) {
+            return parseFloat(i.latencyMs);
+          }).concat([0.001])
+        );
+        renderBarList(rpsContainer, list, "rps", " req/s", maxRPS);
+        renderBarList(latencyContainer, list, "latency", " ms", maxLatency);
+      });
+    });
+    window.__larivArticleBenchmarksRendered = true;
+  }
+
   async function fetchBenchmarkMetrics() {
-    if (!document.getElementById("performance")) return;
+    if (!document.getElementById("performance") && !hasArticleBenchmarkCharts()) return;
     var sources = [];
-    var seeded = document.getElementById("performance").getAttribute("data-benchmark-src");
+    var perfRoot = document.getElementById("performance");
+    var seeded = perfRoot && perfRoot.getAttribute("data-benchmark-src");
     if (seeded) sources.push(seeded);
     sources.push("/static/benchmark_metrics.json");
     sources.push("https://raw.githubusercontent.com/UniquityVentures/benchmarks/main/benchmark_metrics.json");
@@ -274,6 +320,7 @@
       }
     }
     renderPerfCharts();
+    renderArticleBenchmarkCharts();
   }
 
   function bindPerfControls() {

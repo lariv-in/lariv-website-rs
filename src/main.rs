@@ -8,6 +8,7 @@ mod website_seed;
 
 #[lariv_rs::main(
     stack_size = 64 * 1024 * 1024,
+    flavor = "multi_thread",
     thread_name = "lariv-website-server"
 )]
 async fn main() -> anyhow::Result<()> {
