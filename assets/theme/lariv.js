@@ -307,7 +307,7 @@
     var seeded = perfRoot && perfRoot.getAttribute("data-benchmark-src");
     if (seeded) sources.push(seeded);
     sources.push("/static/benchmark_metrics.json");
-    sources.push("https://raw.githubusercontent.com/UniquityVentures/benchmarks/main/benchmark_metrics.json");
+    sources.push("https://raw.githubusercontent.com/lariv-in/benchmarks/main/benchmark_metrics.json");
 
     for (var i = 0; i < sources.length; i++) {
       try {

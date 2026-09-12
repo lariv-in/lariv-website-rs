@@ -100,7 +100,7 @@ This tests background task processing under heavy load with 500 simultaneous use
 
 <div class="perf-pair" data-article-benchmark="task" data-workers="500"><div class="perf-card"><h4><span>Requests Per Second (RPS)</span><span class="perf-hint">Higher is better</span></h4><div id="task-rps-bars-500" class="bars-container"><div style="color: var(--text-dark); padding: 1.5rem 0; text-align: center;">Loading benchmark metrics...</div></div></div><div class="perf-card"><h4><span>Average Latency (ms)</span><span class="perf-hint">Lower is better</span></h4><div id="task-latency-bars-500" class="bars-container"><div style="color: var(--text-dark); padding: 1.5rem 0; text-align: center;">Loading benchmark metrics...</div></div></div></div>
 
-<p class="article-source"><a href="https://raw.githubusercontent.com/UniquityVentures/benchmarks/refs/heads/main/benchmark_metrics.json" target="_blank" rel="noopener">Data sourced from GitHub: UniquityVentures/benchmarks ↗</a></p>
+<p class="article-source"><a href="https://raw.githubusercontent.com/lariv-in/benchmarks/refs/heads/main/benchmark_metrics.json" target="_blank" rel="noopener">Data sourced from GitHub: lariv-in/benchmarks ↗</a></p>
 
 ## Why User Scale Matters
 
@@ -121,4 +121,4 @@ Performance directly impacts server bills and infrastructure costs. Choosing Lar
 
 ### Try the Benchmark Code Yourself
 
-All benchmark scripts, test data, and setup steps are open source so anyone can test and verify our results. You can view the code and run the tests on your own servers by visiting the [Lariv Benchmarks GitHub Repository](https://github.com/UniquityVentures/benchmarks).
+All benchmark scripts, test data, and setup steps are open source so anyone can test and verify our results. You can view the code and run the tests on your own servers by visiting the [Lariv Benchmarks GitHub Repository](https://github.com/lariv-in/benchmarks).

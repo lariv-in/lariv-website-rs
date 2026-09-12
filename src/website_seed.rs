@@ -164,7 +164,7 @@ pub async fn ensure_site(state: &WebsiteState) -> anyhow::Result<()> {
 }
 
 async fn ensure_site_state(db: &DatabaseConnection, store: &DynFilestore) -> anyhow::Result<()> {
-    ensure_custom_theme(db, store).await?;
+    let (theme_css, theme_js) = ensure_custom_theme(db, store).await?;
     let media_urls = ensure_static_assets(db, store).await?;
     let (header, header_rewritten) =
         ensure_named_html(db, store, &["website".into()], "header.html", HEADER_HTML, &media_urls)
@@ -187,7 +187,12 @@ async fn ensure_site_state(db: &DatabaseConnection, store: &DynFilestore) -> any
         .await?;
         let route_id =
             ensure_db_route(db, page.path, vnode.id, THEME, page_rewritten || refs_changed).await?;
-        ensure_route_refs(db, route_id, &[header.id, footer.id]).await?;
+        ensure_route_refs(
+            db,
+            route_id,
+            &[header.id, footer.id, theme_css.id, theme_js.id],
+        )
+        .await?;
         tracing::info!(
             path = page.path,
             page_id = vnode.id,
@@ -196,6 +201,11 @@ async fn ensure_site_state(db: &DatabaseConnection, store: &DynFilestore) -> any
             "lariv website: page route ready"
         );
     }
+    ensure_article_routes(
+        db,
+        &[header.id, footer.id, theme_css.id, theme_js.id],
+    )
+    .await?;
     Ok(())
 }
 
@@ -225,7 +235,13 @@ async fn ensure_named_html(
 }
 
 /// Seeds theme CSS/JS under `website/themes/` and points Custom theme preferences at them.
-async fn ensure_custom_theme(db: &DatabaseConnection, store: &DynFilestore) -> anyhow::Result<()> {
+async fn ensure_custom_theme(
+    db: &DatabaseConnection,
+    store: &DynFilestore,
+) -> anyhow::Result<(
+    lariv_rs::plugins::filesystem::entities::VNode,
+    lariv_rs::plugins::filesystem::entities::VNode,
+)> {
     let segments = ["website".into(), "themes".into()];
     let parent_id = node::ensure_directory_path(db, store, None, &segments)
         .await
@@ -279,7 +295,7 @@ async fn ensure_custom_theme(db: &DatabaseConnection, store: &DynFilestore) -> a
         js_vnode_id = js.id,
         "lariv website: custom theme preferences ready"
     );
-    Ok(())
+    Ok((css, js))
 }
 
 fn html_with_media_urls(html: &str, urls: &[(String, String)]) -> String {
@@ -464,4 +480,46 @@ async fn ensure_route_refs(
         .await?;
     }
     Ok(())
+}
+
+/// Article URLs often match a leftover exact-slug or Go wildcard row, not `/blogs/*`.
+/// Those rows still point at `blogs_slug.html` but have an empty theme, so CSS is
+/// never injected. Bind Custom theme + header/footer refs onto every such route.
+async fn ensure_article_routes(db: &DatabaseConnection, vnode_ids: &[i64]) -> anyhow::Result<()> {
+    let routes = DbRouteEntity::find().all(db).await?;
+    for route in routes {
+        let is_slug_page = match node::get_by_id(db, route.page_id).await {
+            Ok(Some(page)) => page.name == "blogs_slug.html",
+            Ok(None) => false,
+            Err(e) => {
+                tracing::error!(error = %e, route_id = route.id, "get page for article route");
+                false
+            }
+        };
+        if !is_slug_page && !is_blog_article_path(&route.path) {
+            continue;
+        }
+        let needs_theme = route.theme != THEME;
+        if needs_theme {
+            tracing::warn!(
+                path = %route.path,
+                old_theme = %route.theme,
+                "lariv website: article route missing Custom theme; updating"
+            );
+            let id = route.id;
+            let mut am: db_route::ActiveModel = route.into();
+            am.theme = Set(THEME.into());
+            am.updated_at = Set(Some(Utc::now()));
+            am.update(db).await?;
+            ensure_route_refs(db, id, vnode_ids).await?;
+        } else {
+            ensure_route_refs(db, route.id, vnode_ids).await?;
+        }
+    }
+    Ok(())
+}
+
+fn is_blog_article_path(path: &str) -> bool {
+    let p = path.trim_matches('/');
+    p != "blogs" && p.starts_with("blogs/")
 }
