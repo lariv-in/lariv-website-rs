@@ -1,25 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="200 200 800 800" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="200 200 600 600" width="100%" height="100%">
   <defs>
-    <!-- Background Radial Glow -->
-    <radialGradient id="bg-glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#6340cc" stop-opacity="0.18" />
-      <stop offset="60%" stop-color="#4f46e5" stop-opacity="0.05" />
-      <stop offset="100%" stop-color="#0f172a" stop-opacity="0" />
-    </radialGradient>
-
-    <!-- Square Card Fill Gradient -->
-    <linearGradient id="sq-fill" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1e1b4b" stop-opacity="0.92" />
-      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.96" />
-    </linearGradient>
-
-    <!-- Square Card Border Gradient -->
-    <linearGradient id="sq-border" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#818cf8" stop-opacity="0.6" />
-      <stop offset="50%" stop-color="#c084fc" stop-opacity="0.3" />
-      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.5" />
-    </linearGradient>
-
     <!-- Logo clipPaths from logo.svg -->
     <clipPath id="b7bc7a9c00"><path d="M 405 122.703125 L 1012.300781 122.703125 L 1012.300781 615.035156 L 405 615.035156 Z M 405 122.703125 " clip-rule="nonzero"/></clipPath>
     <clipPath id="a3421a889d"><path d="M 405.917969 240.742188 L 405.917969 497 L 1012.300781 615.035156 L 1012.300781 122.703125 Z M 405.917969 240.742188 " clip-rule="nonzero"/></clipPath>
@@ -117,24 +97,12 @@
       }
     }
 
-    /* Square Card Base Styling */
-    .card-bg {
-      fill: url(#sq-fill);
-      stroke: url(#sq-border);
-      stroke-width: 2.5;
-      rx: 24;
-      ry: 24;
-      filter: drop-shadow(0 8px 16px rgba(15, 23, 42, 0.45));
-    }
-
     .square-logo-slot {
       pointer-events: none;
     }
   /* ]]> */
   </style>
 
-  <!-- Background Ambient Glow -->
-  <circle class="ambient-glow" cx="500" cy="500" r="380" fill="url(#bg-glow)" />
 
   <!-- =================================================== -->
   <!-- 1. CENTER LARIV LOGO                               -->
