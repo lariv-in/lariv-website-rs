@@ -1,10 +1,8 @@
 #![recursion_limit = "512"]
 
 use lariv_rs::app::App;
-use lariv_rs::plugins::{blog, dashboard, filesystem, users, website};
+use lariv_rs::plugins::{blog, dashboard, filesystem, filesystem_sync_git, mdbook, users, website};
 use tracing_subscriber::EnvFilter;
-
-mod website_seed;
 
 #[lariv_rs::main(
     stack_size = 64 * 1024 * 1024,
@@ -25,7 +23,8 @@ async fn main() -> anyhow::Result<()> {
     let app = dashboard::install(app);
     // After dashboard so website can own `/` (CMS home) over the auth redirect.
     let app = website::install(app);
-    let app = website_seed::install(app);
+    let app = mdbook::install(app);
+    let app = filesystem_sync_git::install(app);
 
     let app = app.load_config("config.toml").await?;
     let app = app.mount();

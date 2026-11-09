@@ -8,24 +8,25 @@ name = "lariv-website-rs"
 path = "src/main.rs"
 
 [dependencies]
+# `define_plugin_install!` expands to `::lariv_core::…`, so the binary must depend on the kernel directly.
+lariv-core = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
 lariv-rs = { version = "0.1.0",
 	# path = "../../lariv-rs",
-	git = "https://github.com/lariv-in/lariv-rs", rev = "c05f9fedeeef7ee218e0ea7a35b072a243cb1533",
+	git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7",
 	default-features = false, features = [
 		"plugin-users",
 		"plugin-dashboard",
 		"plugin-filesystem",
 		"plugin-website",
 		"plugin-blog",
+		"plugin-mdbook",
+		"plugin-filesystem-sync-git",
 ] }
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1", features = ["backtrace"] }
-async-trait = "0.1"
 frunk = { version = "0.5.0", features = ["serde", "std"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing = "0.1"
-chrono = "0.4"
-sea-orm = { version = "1.1", features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite"] }
 
 [dev-dependencies]
 uuid = { version = "1", features = ["v4"] }

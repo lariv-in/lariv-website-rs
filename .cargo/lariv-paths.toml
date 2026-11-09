@@ -1,0 +1,15 @@
+# Local overlay for the lariv-rs git source.
+# scripts/lariv-source git moves this file aside so Cargo skips it.
+# Paths are relative to the project root (Cargo resolves .cargo config paths
+# two levels up from this file).
+#
+# Only crates this binary actually depends on. Unused `[patch]` entries warn
+# on every Cargo invocation.
+
+[patch."https://github.com/lariv-in/lariv-rs.git"]
+lariv-rs = { path = "../../lariv-rs" }
+lariv-core = { path = "../../lariv-rs/lariv-core" }
+lariv-formula = { path = "../../lariv-rs/lariv-formula" }
+lariv-plugin-filesystem = { path = "../../lariv-rs/plugins/filesystem" }
+lariv-plugin-users = { path = "../../lariv-rs/plugins/users" }
+lariv-plugin-website = { path = "../../lariv-rs/plugins/website" }
