@@ -6,24 +6,24 @@ resolver = "2"
 edition = "2024"
 
 [workspace.dependencies]
-lariv-core = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-bank-accounts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-companies = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-contacts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-dashboard = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-filesystem = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-finance-accounts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-finance-creditnotes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-finance-customers = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-finance-gst-export = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-finance-invoices = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-finance-payments = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-finance-products = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-finance-purchases = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-finance-taxes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-import-export = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-llm-assistant = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
-lariv-plugin-users = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
+lariv-core = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-bank-accounts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-companies = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-contacts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-dashboard = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-filesystem = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-finance-accounts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-finance-creditnotes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-finance-customers = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-finance-gst-export = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-finance-invoices = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-finance-payments = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-finance-products = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-finance-purchases = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-finance-taxes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-import-export = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-llm-assistant = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
+lariv-plugin-users = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
 frunk = { version = "0.5.0", features = ["serde", "std"] }
 frunk_core = "0.5.0"
 
@@ -38,10 +38,10 @@ path = "src/main.rs"
 
 [dependencies]
 # `define_plugin_install!` expands to `::lariv_core::…`, so the binary must depend on the kernel directly.
-lariv-core = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002" }
+lariv-core = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f" }
 lariv-rs = { version = "0.1.0",
 	# path = "../../lariv-rs",
-	git = "https://github.com/lariv-in/lariv-rs", rev = "a90203ce6b11fd989d3a70b51cc549a0bb925002",
+	git = "https://github.com/lariv-in/lariv-rs", rev = "783c438e978a97e858d8b297291b9a7ec5b0b32f",
 	default-features = false, features = [
 		"plugin-users",
 		"plugin-otp",

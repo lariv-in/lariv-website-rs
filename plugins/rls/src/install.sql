@@ -207,13 +207,17 @@ BEGIN
         IF rls_is_bypass() THEN
             RETURN NEW;
         END IF;
-        IF TG_TABLE_NAME IS DISTINCT FROM 'filesystem_preferences'
-           OR rls_current_user_id() IS NULL
-        THEN
+        -- filesystem_preferences may insert an unassigned root with no user.
+        -- Other tables still need a company.
+        IF TG_TABLE_NAME IS DISTINCT FROM 'filesystem_preferences' THEN
             RAISE EXCEPTION 'rls: active company required to insert into %', TG_TABLE_NAME;
         END IF;
     END IF;
-    IF cid IS NOT NULL AND NOT rls_is_company_member(cid) AND NOT rls_is_bypass() THEN
+    IF cid IS NOT NULL
+       AND NOT rls_is_company_member(cid)
+       AND NOT rls_is_bypass()
+       AND NOT rls_is_superuser()
+    THEN
         RAISE EXCEPTION 'rls: not a member of the active company';
     END IF;
     FOREACH col IN ARRAY owner_cols LOOP
@@ -653,8 +657,9 @@ BEGIN
 END
 $fn$;
 
--- Unassigned root access (no active company) is visible to any signed-in user.
--- An active company sees only its own row.
+-- Unassigned root access (no active company) is visible with no signed-in user,
+-- so the public site and a first visit can read it instead of inserting blindly.
+-- An active company sees only its own row. Superusers see every row.
 CREATE OR REPLACE FUNCTION rls_filesystem_pref_visible(owners regclass, key bigint)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -663,13 +668,13 @@ AS $fn$
 DECLARE
     ok boolean;
 BEGIN
-    IF rls_is_bypass() THEN
+    IF rls_is_bypass() OR rls_is_superuser() THEN
         RETURN true;
     END IF;
-    IF key IS NULL OR rls_current_user_id() IS NULL THEN
+    IF key IS NULL THEN
         RETURN false;
     END IF;
-    IF rls_current_company_id() IS NULL THEN
+    IF rls_current_user_id() IS NULL OR rls_current_company_id() IS NULL THEN
         EXECUTE format(
             'SELECT EXISTS (SELECT 1 FROM %s WHERE record_id = $1 AND company_id IS NULL)',
             owners
@@ -679,6 +684,194 @@ BEGIN
         RETURN COALESCE(ok, false);
     END IF;
     RETURN rls_row_visible(owners, ARRAY[key]);
+END
+$fn$;
+
+-- A VNode the public website may read with no signed-in user.
+-- The /website tree is the public content root (pages, static files, themes).
+-- Active route pages, their references, and custom-theme files are visible
+-- even when they live outside that tree, and so are the directories above
+-- them, so path lookup works. Other vnode trees stay company-scoped.
+CREATE OR REPLACE FUNCTION rls_public_website_vnode(node_id bigint)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $fn$
+DECLARE
+    visible boolean := false;
+BEGIN
+    IF node_id IS NULL OR to_regclass('public.filesystem_nodes') IS NULL THEN
+        RETURN false;
+    END IF;
+    IF to_regclass('public.db_routes') IS NOT NULL THEN
+        EXECUTE $sql$
+            WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id, 0 AS depth
+                FROM filesystem_nodes
+                WHERE id = $1
+                UNION ALL
+                SELECT n.id, n.parent_id, a.depth + 1
+                FROM filesystem_nodes n
+                JOIN ancestors a ON n.id = a.parent_id
+                WHERE a.depth < 64
+            )
+            SELECT EXISTS (
+                SELECT 1
+                FROM ancestors a
+                JOIN db_routes r ON r.page_id = a.id
+                WHERE r.is_active
+            )
+        $sql$
+            INTO visible
+            USING node_id;
+        IF visible THEN
+            RETURN true;
+        END IF;
+    END IF;
+    IF to_regclass('public.db_routes') IS NOT NULL
+       AND to_regclass('public.p_website_route_references') IS NOT NULL
+    THEN
+        EXECUTE $sql$
+            WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id, 0 AS depth
+                FROM filesystem_nodes
+                WHERE id = $1
+                UNION ALL
+                SELECT n.id, n.parent_id, a.depth + 1
+                FROM filesystem_nodes n
+                JOIN ancestors a ON n.id = a.parent_id
+                WHERE a.depth < 64
+            )
+            SELECT EXISTS (
+                SELECT 1
+                FROM ancestors a
+                JOIN p_website_route_references ref ON ref.v_node_id = a.id
+                JOIN db_routes r ON r.id = ref.db_route_id
+                WHERE r.is_active
+            )
+        $sql$
+            INTO visible
+            USING node_id;
+        IF visible THEN
+            RETURN true;
+        END IF;
+    END IF;
+    IF to_regclass('public.website_preferences') IS NOT NULL THEN
+        EXECUTE $sql$
+            WITH RECURSIVE ancestors AS (
+                SELECT id, parent_id, 0 AS depth
+                FROM filesystem_nodes
+                WHERE id = $1
+                UNION ALL
+                SELECT n.id, n.parent_id, a.depth + 1
+                FROM filesystem_nodes n
+                JOIN ancestors a ON n.id = a.parent_id
+                WHERE a.depth < 64
+            )
+            SELECT EXISTS (
+                SELECT 1
+                FROM ancestors a
+                JOIN website_preferences p
+                  ON p.custom_theme_css_vnode_id = a.id
+                  OR p.custom_theme_js_vnode_id = a.id
+            )
+        $sql$
+            INTO visible
+            USING node_id;
+        IF visible THEN
+            RETURN true;
+        END IF;
+    END IF;
+    EXECUTE $sql$
+        WITH RECURSIVE ancestors AS (
+            SELECT id, parent_id, name, 0 AS depth
+            FROM filesystem_nodes
+            WHERE id = $1
+            UNION ALL
+            SELECT n.id, n.parent_id, n.name, a.depth + 1
+            FROM filesystem_nodes n
+            JOIN ancestors a ON n.id = a.parent_id
+            WHERE a.depth < 64
+        )
+        SELECT EXISTS (
+            SELECT 1
+            FROM ancestors dir
+            WHERE dir.name = 'website'
+              AND dir.parent_id IS NULL
+        )
+    $sql$
+        INTO visible
+        USING node_id;
+    RETURN COALESCE(visible, false);
+END
+$fn$;
+
+-- Website catalog tables are read by anonymous visitors. Company ownership
+-- does not apply. Writes still require a signed-in member, a superuser, or bypass.
+CREATE OR REPLACE FUNCTION rls_install_public_website_table(target text)
+RETURNS void
+LANGUAGE plpgsql
+AS $fn$
+DECLARE
+    owners text := rls_owners_name(target);
+    trg record;
+    select_using text;
+    write_check text := 'rls_is_bypass() OR rls_is_superuser() OR (rls_current_user_id() IS NOT NULL AND rls_current_company_id() IS NOT NULL AND rls_is_company_member(rls_current_company_id()))';
+BEGIN
+    IF to_regclass(format('public.%I', target)) IS NULL THEN
+        RETURN;
+    END IF;
+    DELETE FROM rls_owner_tables WHERE base_table = target;
+    EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', owners);
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', target);
+    EXECUTE format('DROP POLICY IF EXISTS rls_select ON %I', target);
+    EXECUTE format('DROP POLICY IF EXISTS rls_update ON %I', target);
+    EXECUTE format('DROP POLICY IF EXISTS rls_delete ON %I', target);
+    EXECUTE format('DROP POLICY IF EXISTS rls_insert ON %I', target);
+    FOR trg IN
+        SELECT t.tgname
+        FROM pg_trigger t
+        JOIN pg_proc p ON p.oid = t.tgfoid
+        WHERE t.tgrelid = to_regclass(format('public.%I', target))
+          AND NOT t.tgisinternal
+          AND p.proname IN (
+              'rls_own_new_row',
+              'rls_own_new_row_optional_company',
+              'rls_unique_per_owner'
+          )
+    LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS %I ON %I', trg.tgname, target);
+    END LOOP;
+    IF target = 'db_routes' THEN
+        select_using := 'is_active OR ' || write_check;
+    ELSIF target = 'p_website_route_references' THEN
+        select_using := 'rls_is_bypass() OR rls_is_superuser() OR EXISTS (SELECT 1 FROM db_routes r WHERE r.id = db_route_id AND r.is_active) OR (rls_current_user_id() IS NOT NULL AND rls_current_company_id() IS NOT NULL AND rls_is_company_member(rls_current_company_id()))';
+    ELSE
+        select_using := 'true';
+    END IF;
+    EXECUTE format(
+        'CREATE POLICY rls_select ON %I FOR SELECT USING (%s)',
+        target,
+        select_using
+    );
+    EXECUTE format(
+        'CREATE POLICY rls_update ON %I FOR UPDATE USING (%s) WITH CHECK (%s)',
+        target,
+        write_check,
+        write_check
+    );
+    EXECUTE format(
+        'CREATE POLICY rls_delete ON %I FOR DELETE USING (%s)',
+        target,
+        write_check
+    );
+    EXECUTE format(
+        'CREATE POLICY rls_insert ON %I FOR INSERT WITH CHECK (%s)',
+        target,
+        write_check
+    );
 END
 $fn$;
 
@@ -752,6 +945,8 @@ BEGIN
     EXECUTE $pol$
         CREATE POLICY rls_insert ON filesystem_preferences FOR INSERT WITH CHECK (
             rls_is_bypass()
+            OR rls_is_superuser()
+            OR rls_current_user_id() IS NULL
             OR (
                 rls_current_user_id() IS NOT NULL
                 AND (
@@ -764,9 +959,9 @@ BEGIN
     EXECUTE format(
         'CREATE POLICY rls_select ON %I FOR SELECT USING (
             rls_is_bypass()
+            OR rls_is_superuser()
             OR (
                 company_id IS NULL
-                AND rls_current_user_id() IS NOT NULL
                 AND rls_current_company_id() IS NULL
             )
             OR (
@@ -780,6 +975,7 @@ BEGIN
     EXECUTE format(
         'CREATE POLICY rls_delete ON %I FOR DELETE USING (
             rls_is_bypass()
+            OR rls_is_superuser()
             OR (
                 company_id IS NULL
                 AND rls_current_user_id() IS NOT NULL
@@ -796,9 +992,9 @@ BEGIN
     EXECUTE format(
         'CREATE POLICY rls_insert ON %I FOR INSERT WITH CHECK (
             rls_is_bypass()
+            OR rls_is_superuser()
             OR (
                 company_id IS NULL
-                AND rls_current_user_id() IS NOT NULL
                 AND rls_current_company_id() IS NULL
             )
             OR (
@@ -907,6 +1103,17 @@ BEGIN
           AND c.relname NOT LIKE '%\_owners' ESCAPE '\'
         ORDER BY c.relname
     LOOP
+        -- Public site catalog. Anonymous visitors read active routes; the
+        -- renderer also reads preferences to find theme files.
+        IF rec.table_name IN (
+            'db_routes',
+            'p_website_route_references',
+            'website_preferences'
+        ) THEN
+            PERFORM rls_install_public_website_table(rec.table_name);
+            CONTINUE;
+        END IF;
+
         -- Shared IFSC directory. The background sync inserts with no active company.
         IF rec.table_name IN ('banks', 'bank_directory_syncs') THEN
             EXECUTE format('ALTER TABLE %I DISABLE ROW LEVEL SECURITY', rec.table_name);
@@ -1064,28 +1271,70 @@ BEGIN
             EXECUTE format('DROP POLICY IF EXISTS rls_select ON %I', owners);
             EXECUTE format('DROP POLICY IF EXISTS rls_delete ON %I', owners);
             EXECUTE format('DROP POLICY IF EXISTS rls_insert ON %I', owners);
-            EXECUTE format(
-                'CREATE POLICY rls_select ON %I FOR SELECT USING (
-                    rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[])
-                )',
-                rec.table_name,
-                owners
-            );
-            EXECUTE format(
-                'CREATE POLICY rls_update ON %I FOR UPDATE
-                 USING (rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[]))
-                 WITH CHECK (rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[]))',
-                rec.table_name,
-                owners,
-                owners
-            );
-            EXECUTE format(
-                'CREATE POLICY rls_delete ON %I FOR DELETE USING (
-                    rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[])
-                )',
-                rec.table_name,
-                owners
-            );
+            IF rec.table_name = 'filesystem_nodes' THEN
+                EXECUTE format(
+                    'CREATE POLICY rls_select ON %I FOR SELECT USING (
+                        rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[])
+                        OR rls_public_website_vnode(id)
+                    )',
+                    rec.table_name,
+                    owners
+                );
+            ELSE
+                EXECUTE format(
+                    'CREATE POLICY rls_select ON %I FOR SELECT USING (
+                        rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[])
+                    )',
+                    rec.table_name,
+                    owners
+                );
+            END IF;
+            -- A superuser can open a public website file (header.html under
+            -- /website) without belonging to the company that owns the row.
+            -- The company check then matches zero rows and the save is a no-op.
+            IF rec.table_name = 'filesystem_nodes' THEN
+                EXECUTE format(
+                    'CREATE POLICY rls_update ON %I FOR UPDATE
+                     USING (
+                        rls_is_bypass()
+                        OR rls_is_superuser()
+                        OR rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[])
+                     )
+                     WITH CHECK (
+                        rls_is_bypass()
+                        OR rls_is_superuser()
+                        OR rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[])
+                     )',
+                    rec.table_name,
+                    owners,
+                    owners
+                );
+                EXECUTE format(
+                    'CREATE POLICY rls_delete ON %I FOR DELETE USING (
+                        rls_is_bypass()
+                        OR rls_is_superuser()
+                        OR rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[])
+                    )',
+                    rec.table_name,
+                    owners
+                );
+            ELSE
+                EXECUTE format(
+                    'CREATE POLICY rls_update ON %I FOR UPDATE
+                     USING (rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[]))
+                     WITH CHECK (rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[]))',
+                    rec.table_name,
+                    owners,
+                    owners
+                );
+                EXECUTE format(
+                    'CREATE POLICY rls_delete ON %I FOR DELETE USING (
+                        rls_row_visible_optional_company(%L::regclass, ARRAY[id]::bigint[])
+                    )',
+                    rec.table_name,
+                    owners
+                );
+            END IF;
             IF rec.table_name = 'logs' THEN
                 -- Audit inserts must always succeed; company on the owner row is optional.
                 EXECUTE format(
@@ -1648,7 +1897,11 @@ GRANT EXECUTE ON FUNCTION rls_resolve_active_company() TO lariv_website_app;
 GRANT EXECUTE ON FUNCTION rls_is_superuser() TO lariv_website_app;
 GRANT EXECUTE ON FUNCTION rls_is_bypass() TO lariv_website_app;
 GRANT EXECUTE ON FUNCTION rls_row_visible_optional_company(regclass, bigint[]) TO lariv_website_app;
+REVOKE ALL ON FUNCTION rls_filesystem_pref_visible(regclass, bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION rls_filesystem_pref_visible(regclass, bigint) TO lariv_website_app;
 GRANT EXECUTE ON FUNCTION rls_own_new_row_optional_company() TO lariv_website_app;
+REVOKE ALL ON FUNCTION rls_public_website_vnode(bigint) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION rls_public_website_vnode(bigint) TO lariv_website_app;
+REVOKE ALL ON FUNCTION rls_install_public_website_table(text) FROM PUBLIC;
 
 DO $$ BEGIN PERFORM rls_install_policies(); END $$;

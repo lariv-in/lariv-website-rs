@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>file input click</title>
+<style>body{font-family:sans-serif;padding:2rem;display:flex;gap:3rem}</style>
+<div>
+  <p>Nested label</p>
+  <label>
+    File
+    <input id="nested" type="file">
+  </label>
+  <p id="nested-log">none</p>
+</div>
+<div>
+  <p>Sibling</p>
+  <label for="sibling">File</label>
+  <input id="sibling" type="file">
+  <p id="sibling-log">none</p>
+</div>
+<script>
+for (const id of ["nested", "sibling"]) {
+  document.getElementById(id).addEventListener("click", () => {
+    document.getElementById(id + "-log").textContent = "click";
+  });
+}
+</script>
