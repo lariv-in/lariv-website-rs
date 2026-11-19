@@ -1,0 +1,18 @@
+[package]
+name = "website-plugin-company-context"
+version = "0.1.0"
+edition.workspace = true
+description = "Topbar company switcher and task-local active-company context for this website"
+
+[dependencies]
+lariv-core = { workspace = true }
+# Switcher renders through `block_on_async`, which needs `cap-llm`.
+lariv-plugin-companies = { workspace = true, features = ["cap-llm"] }
+lariv-plugin-users = { workspace = true }
+axum = "0.8"
+frunk = { workspace = true }
+frunk_core = { workspace = true }
+maud = "0.27"
+sea-orm = { version = "2.0", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros"] }
+tokio = { version = "1", features = ["sync"] }
+tracing = "0.1"

@@ -2,14 +2,45 @@
 # scripts/lariv-source git moves this file aside so Cargo skips it.
 # Paths are relative to the project root (Cargo resolves .cargo config paths
 # two levels up from this file).
-#
-# Only crates this binary actually depends on. Unused `[patch]` entries warn
-# on every Cargo invocation.
 
 [patch."https://github.com/lariv-in/lariv-rs.git"]
 lariv-rs = { path = "../../lariv-rs" }
 lariv-core = { path = "../../lariv-rs/lariv-core" }
 lariv-formula = { path = "../../lariv-rs/lariv-formula" }
+lariv-plugin-companies = { path = "../../lariv-rs/plugins/companies" }
+lariv-plugin-contacts = { path = "../../lariv-rs/plugins/contacts" }
+lariv-plugin-crm = { path = "../../lariv-rs/plugins/crm" }
+lariv-plugin-customer = { path = "../../lariv-rs/plugins/customer" }
+lariv-plugin-dashboard = { path = "../../lariv-rs/plugins/dashboard" }
 lariv-plugin-filesystem = { path = "../../lariv-rs/plugins/filesystem" }
+lariv-plugin-finance-accounts = { path = "../../lariv-rs/plugins/finance_accounts" }
+lariv-plugin-finance-common = { path = "../../lariv-rs/plugins/finance_common" }
+lariv-plugin-finance-creditnotes = { path = "../../lariv-rs/plugins/finance_creditnotes" }
+lariv-plugin-finance-customers = { path = "../../lariv-rs/plugins/finance_customers" }
+lariv-plugin-finance-invoices = { path = "../../lariv-rs/plugins/finance_invoices" }
+lariv-plugin-finance-payments = { path = "../../lariv-rs/plugins/finance_payments" }
+lariv-plugin-finance-products = { path = "../../lariv-rs/plugins/finance_products" }
+lariv-plugin-finance-purchases = { path = "../../lariv-rs/plugins/finance_purchases" }
+lariv-plugin-finance-gst-export = { path = "../../lariv-rs/plugins/finance_gst_export" }
+lariv-plugin-finance-indian = { path = "../../lariv-rs/plugins/finance_indian" }
+lariv-plugin-finance-invoices-log = { path = "../../lariv-rs/plugins/finance_invoices_log" }
+lariv-plugin-finance-taxes = { path = "../../lariv-rs/plugins/finance_taxes" }
+lariv-plugin-import-export = { path = "../../lariv-rs/plugins/import_export" }
+lariv-plugin-logging = { path = "../../lariv-rs/plugins/logging" }
+lariv-plugin-hr = { path = "../../lariv-rs/plugins/hr" }
+lariv-plugin-hr-attendance = { path = "../../lariv-rs/plugins/hr_attendance" }
+lariv-plugin-hr-holidays = { path = "../../lariv-rs/plugins/hr_holidays" }
+lariv-plugin-hr-job-posting = { path = "../../lariv-rs/plugins/hr_job_posting" }
+lariv-plugin-hr-leaves = { path = "../../lariv-rs/plugins/hr_leaves" }
+lariv-plugin-hr-overtime = { path = "../../lariv-rs/plugins/hr_overtime" }
+lariv-plugin-inventory = { path = "../../lariv-rs/plugins/inventory" }
+lariv-plugin-llm-assistant = { path = "../../lariv-rs/plugins/llm_assistant" }
+lariv-plugin-otp = { path = "../../lariv-rs/plugins/otp" }
+lariv-plugin-signup = { path = "../../lariv-rs/plugins/signup" }
+lariv-plugin-tasks = { path = "../../lariv-rs/plugins/tasks" }
 lariv-plugin-users = { path = "../../lariv-rs/plugins/users" }
 lariv-plugin-website = { path = "../../lariv-rs/plugins/website" }
+
+[target.x86_64-unknown-linux-gnu]
+# linker = "clang" # Uncomment this line if your GCC is older than version 16.
+rustflags = ["-Clink-arg=-fuse-ld=wild"]

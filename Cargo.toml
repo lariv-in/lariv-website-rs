@@ -1,3 +1,32 @@
+[workspace]
+members = [".", "plugins/*"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+
+[workspace.dependencies]
+lariv-core = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-bank-accounts = { version = "0.1.0", path = "../../lariv-rs/plugins/bank_accounts" }
+lariv-plugin-companies = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-contacts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-dashboard = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-filesystem = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-finance-accounts = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-finance-creditnotes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-finance-customers = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-finance-gst-export = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-finance-invoices = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-finance-payments = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-finance-products = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-finance-purchases = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-finance-taxes = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-import-export = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-llm-assistant = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+lariv-plugin-users = { version = "0.1.0", git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7" }
+frunk = { version = "0.5.0", features = ["serde", "std"] }
+frunk_core = "0.5.0"
+
 [package]
 name = "lariv-website-rs"
 version = "0.1.0"
@@ -15,13 +44,39 @@ lariv-rs = { version = "0.1.0",
 	git = "https://github.com/lariv-in/lariv-rs", rev = "d9ca28ed631a7383d10aa3b3de78c370b3d95be7",
 	default-features = false, features = [
 		"plugin-users",
+		"plugin-otp",
+		"plugin-signup",
 		"plugin-dashboard",
 		"plugin-filesystem",
+		"plugin-llm-assistant",
 		"plugin-website",
 		"plugin-blog",
 		"plugin-mdbook",
 		"plugin-filesystem-sync-git",
+		"plugin-bank-accounts",
+		"plugin-contacts",
+		"plugin-customer",
+		"plugin-crm",
+		"plugin-import-export",
+		"plugin-logging",
+		"plugin-finance-accounts",
+		"plugin-finance-customers",
+		"plugin-finance-taxes",
+		"plugin-finance-products",
+		"plugin-finance-creditnotes",
+		"plugin-finance-payments",
+		"plugin-finance-invoices",
+		"plugin-finance-invoices-log",
+		"plugin-finance-purchases",
+		"plugin-finance-indian",
+		"plugin-finance-gst-export",
 ] }
+website-plugin-accounting-sidebar = { path = "plugins/accounting_sidebar" }
+website-plugin-company-context = { path = "plugins/company_context" }
+website-plugin-dashboard-launch = { path = "plugins/dashboard_launch" }
+website-plugin-global-preferences = { path = "plugins/global_preferences" }
+website-plugin-llm-assistant = { path = "plugins/llm_assistant" }
+website-plugin-rls = { path = "plugins/rls" }
 tokio = { version = "1", features = ["full"] }
 anyhow = { version = "1", features = ["backtrace"] }
 frunk = { version = "0.5.0", features = ["serde", "std"] }

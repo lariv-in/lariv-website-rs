@@ -1,0 +1,28 @@
+[package]
+name = "website-plugin-rls"
+version = "0.1.0"
+edition.workspace = true
+description = "Postgres row-level security for per-user website data"
+
+[dependencies]
+lariv-core = { workspace = true }
+# `cap-llm` matches this deployment: companies templates call `block_on_async`.
+lariv-plugin-companies = { workspace = true, features = ["cap-llm"] }
+lariv-plugin-users = { workspace = true }
+website-plugin-company-context = { path = "../company_context" }
+anyhow = "1"
+async-trait = "0.1"
+frunk = { workspace = true }
+frunk_core = { workspace = true }
+futures-util = "0.3"
+sea-orm = { version = "2.0", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-json"] }
+sea-orm-migration = { version = "2.0", features = ["sqlx-postgres", "runtime-tokio-rustls"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync"] }
+percent-encoding = "2"
+toml = "0.8"
+tracing = "0.1"
+url = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

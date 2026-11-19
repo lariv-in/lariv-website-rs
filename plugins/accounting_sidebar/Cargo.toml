@@ -1,0 +1,17 @@
+[package]
+name = "website-plugin-accounting-sidebar"
+version = "0.1.0"
+edition.workspace = true
+description = "Add the other apps in this deployment to the accounting sidebar"
+
+[dependencies]
+lariv-core = { workspace = true }
+# Company list URLs live on this crate. `cap-llm` matches this deployment: the
+# companies templates call `block_on_async`, which exists only with that feature.
+lariv-plugin-bank-accounts = { workspace = true }
+lariv-plugin-companies = { workspace = true, features = ["cap-llm"] }
+lariv-plugin-contacts = { workspace = true }
+lariv-plugin-filesystem = { workspace = true }
+lariv-plugin-finance-accounts = { workspace = true }
+lariv-plugin-import-export = { workspace = true }
+frunk = { workspace = true }

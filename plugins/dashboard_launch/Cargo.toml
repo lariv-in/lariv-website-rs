@@ -1,0 +1,12 @@
+[package]
+name = "website-plugin-dashboard-launch"
+version = "0.1.0"
+edition.workspace = true
+description = "Open dashboard app tiles in a new tab and hide the apps-grid topbar button"
+
+[dependencies]
+lariv-core = { workspace = true }
+lariv-plugin-dashboard = { workspace = true }
+lariv-plugin-users = { workspace = true }
+frunk = { workspace = true }
+maud = "0.27"
