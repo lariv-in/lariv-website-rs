@@ -430,60 +430,41 @@ async fn ensure_product_tax_links(
     let pref_owners = owners_table(db, "product_preferences").await?;
     let tax_owners = owners_table(db, "taxes").await?;
     let link_owners = owners_table(db, "product_preferences_taxes").await?;
-    let prefs = db
-        .query_all_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            format!(
-                "SELECT t.id AS id
-                 FROM product_preferences t
-                 JOIN {pref_owners} o ON o.record_id = t.id
-                 WHERE o.company_id = $1
-                 ORDER BY t.id"
-            ),
-            [company_id.into()],
-        ))
-        .await?;
-    for pref in prefs {
-        let pref_id: i64 = pref.try_get("", "id")?;
-        for name in DEFAULT_PRODUCT_TAXES {
-            let Some(tax_id) = owned_id(
-                db,
-                &tax_owners,
-                "taxes",
-                company_id,
-                "t.name = $2",
-                &[(*name).into()],
-            )
-            .await?
-            else {
-                continue;
-            };
-            let inserted = db
-                .query_one_raw(Statement::from_sql_and_values(
-                    DatabaseBackend::Postgres,
-                    "INSERT INTO product_preferences_taxes (product_preferences_id, tax_id)
-                     VALUES ($1, $2)
-                     ON CONFLICT DO NOTHING
-                     RETURNING product_preferences_id"
-                        .to_owned(),
-                    [pref_id.into(), tax_id.into()],
-                ))
-                .await?;
-            if inserted.is_none() {
-                continue;
-            }
-            db.execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                format!(
-                    "INSERT INTO {link_owners} (product_preferences_id, tax_id, company_id)
-                     VALUES ($1, $2, $3)
-                     ON CONFLICT DO NOTHING"
-                ),
-                [pref_id.into(), tax_id.into(), company_id.into()],
-            ))
-            .await?;
-        }
-    }
+    // One statement. Walking each preference issued two queries per tax and
+    // never returned once the template company owned tens of thousands of rows.
+    let tax_list = DEFAULT_PRODUCT_TAXES
+        .iter()
+        .map(|name| format!("'{}'", name.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(", ");
+    db.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "INSERT INTO product_preferences_taxes (product_preferences_id, tax_id)
+             SELECT p.id, t.id
+             FROM product_preferences p
+             JOIN {pref_owners} po ON po.record_id = p.id AND po.company_id = $1
+             JOIN taxes t ON t.name IN ({tax_list})
+             JOIN {tax_owners} tx ON tx.record_id = t.id AND tx.company_id = $1
+             ON CONFLICT DO NOTHING"
+        ),
+        [company_id.into()],
+    ))
+    .await?;
+    db.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "INSERT INTO {link_owners} (product_preferences_id, tax_id, company_id)
+             SELECT l.product_preferences_id, l.tax_id, $1
+             FROM product_preferences_taxes l
+             JOIN {pref_owners} po
+               ON po.record_id = l.product_preferences_id AND po.company_id = $1
+             JOIN taxes t ON t.id = l.tax_id AND t.name IN ({tax_list})
+             ON CONFLICT DO NOTHING"
+        ),
+        [company_id.into()],
+    ))
+    .await?;
     Ok(())
 }
 

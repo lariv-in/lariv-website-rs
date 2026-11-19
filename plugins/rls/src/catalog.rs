@@ -401,6 +401,11 @@ async fn copy_table(
     }
     if let Some(key) = dedupe_key_column(table) {
         pending = dedupe_rows_by_key(pending, key);
+    } else if table.ends_with("_preferences") {
+        // These rows have no business key. The template company accumulated
+        // tens of thousands of empty copies; cloning all of them hangs startup.
+        pending.sort_by_key(|row| json_i64(row.get("id")).unwrap_or(i64::MAX));
+        pending.truncate(1);
     }
     let self_fks: Vec<String> = fks
         .get(table)

@@ -849,8 +849,11 @@ BEGIN
         owners_table text NOT NULL UNIQUE
     );
 
-    -- Drop previous owner sidecars (user-keyed or company-keyed) so the schema
-    -- matches the current install. Policies are recreated below.
+    -- Drop leftover sidecars from an older naming scheme. Tables this install
+    -- still addresses (rls_owners_name of a live base table) stay in place:
+    -- startup re-applies this script after every migration pass, and dropping
+    -- them would discard each company's chart and currencies. The next backfill
+    -- would then hang every unowned copy on the admin company.
     FOR rec IN
         SELECT c.relname
         FROM pg_class c
@@ -862,9 +865,14 @@ BEGIN
               OR c.relname LIKE '%\_owners' ESCAPE '\'
           )
     LOOP
-        -- Keep filesystem root-access links. Dropping them would make the next
-        -- backfill attach the unassigned row to the admin company.
-        IF rec.relname = rls_owners_name('filesystem_preferences') THEN
+        IF EXISTS (
+            SELECT 1
+            FROM pg_class base
+            JOIN pg_namespace bn ON bn.oid = base.relnamespace
+            WHERE bn.nspname = 'public'
+              AND base.relkind = 'r'
+              AND rls_owners_name(base.relname) = rec.relname
+        ) THEN
             CONTINUE;
         END IF;
         EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', rec.relname);
