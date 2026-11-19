@@ -22,6 +22,7 @@ jobs:
         with:
           shared-key: check
           save-if: ${{ github.ref == 'refs/heads/master' }}
+      - run: sudo apt-get update && sudo apt-get install -y libarchive-dev
       - run: cargo check --workspace
 
   # Warm Release-Cache on master (tags can restore it) and upload the LTO'd
@@ -40,6 +41,7 @@ jobs:
           add-rust-environment-hash-key: false
           cache-workspace-crates: true
           cache-on-failure: true
+      - run: sudo apt-get update && sudo apt-get install -y libarchive-dev
       - run: cargo build --release
       - name: require glibc <= 2.41
         run: |
