@@ -89,7 +89,16 @@ pub async fn clone_catalogs(
 fn is_catalog_name(name: &str) -> bool {
     // Nodes/logs stay out of the finance catalog clone. Preferences are
     // company-scoped and clone with the other *_preferences tables.
-    if matches!(name, "filesystem_nodes" | "logs" | "global_preferences") {
+    // Public website tables and site-wide prefs are not company catalogs.
+    if matches!(
+        name,
+        "filesystem_nodes"
+            | "logs"
+            | "global_preferences"
+            | "website_preferences"
+            | "db_routes"
+            | "p_website_route_references"
+    ) {
         return false;
     }
     // Currencies stay in the clone. Journals require `currency_id`, and dropping

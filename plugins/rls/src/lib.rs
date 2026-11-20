@@ -1,8 +1,9 @@
 //! Postgres row-level security for this website deployment.
 //!
-//! Call [`prepare_database`] before [`lariv_core::app::App::load_config`] so the serving
-//! pool logs in as `lariv_website_app` and stamps `app.user_id` on every checkout.
-//! Migrations use `admin_database_url` and are not subject to the policies.
+//! Call [`prepare_database`] before [`lariv_core::app::App::load_config`] so every
+//! checkout stamps `app.user_id`. The configured database user is the only login.
+//! Boot (migrations, seeds, serve startup) sets `app.rls_bypass`; requests do not.
+//! When that login is a superuser, request checkouts `SET ROLE lariv_rls`.
 
 mod bootstrap;
 mod catalog;
@@ -10,7 +11,7 @@ mod directory;
 mod indian;
 mod migrations;
 
-pub use bootstrap::{ensure_login_role, prepare_database};
+pub use bootstrap::{connect_privileged, prepare_database};
 pub use catalog::{clone_catalogs, collapse_duplicate_catalog};
 pub use indian::{ensure_indian_defaults, ensure_indian_defaults_for_all};
 pub use migrations::install_sql;
@@ -65,14 +66,10 @@ where
         let configs = &app.get_capability::<ConfigTag, CfgIdx>().items;
         let app_cfg = <Configs as GetByTag<AppConfigTag, AppCfgIdx>>::get_by_tag(configs);
         let users_cfg = <Configs as GetByTag<UsersConfigTag, UsersCfgIdx>>::get_by_tag(configs);
-        if let Some(admin_url) = app_cfg
-            .admin_database_url
-            .as_deref()
-            .filter(|url| !url.is_empty())
-        {
-            directory::register(admin_url.to_owned(), users_cfg.admin_email.clone());
+        if app_cfg.database_url.is_empty() {
+            tracing::warn!("database_url is unset; row-level security directory is inactive");
         } else {
-            tracing::warn!("admin_database_url is unset; row-level security directory is inactive");
+            directory::register(app_cfg.database_url.clone(), users_cfg.admin_email.clone());
         }
         app.add_capability(CapStore::with_items(RlsState))
     }
@@ -103,6 +100,7 @@ where
 {
     async fn run_serve_startup(_app: &MountedApp<M>) -> anyhow::Result<()> {
         bootstrap::clear_startup_user();
+        bootstrap::end_boot_privilege();
         Ok(())
     }
 }

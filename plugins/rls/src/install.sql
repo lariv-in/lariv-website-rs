@@ -1,7 +1,8 @@
 -- Row-level security keyed by company membership.
--- The serving role is not the table owner, so these policies apply to it.
--- Admin / migration / seed / serve-startup sessions set app.rls_bypass and are
--- treated like a superuser for DDL/DML (see rls_is_bypass).
+-- Policies are forced, so they apply to the connecting role even when that role
+-- owns the tables. Boot and privileged pools set app.rls_bypass (see rls_is_bypass).
+-- Superusers and roles with BYPASSRLS still skip policies; that is Postgres.
+-- Request checkouts SET ROLE to lariv_rls when the login role would skip them.
 
 CREATE OR REPLACE FUNCTION rls_current_user_id()
 RETURNS bigint
@@ -48,17 +49,29 @@ BEGIN
 END
 $fn$;
 
--- True for the admin/migration role, or when the pool hook stamped app.rls_bypass
--- (serve-startup / seed while the startup actor is active).
+-- Role column for a user, readable under the caller's policies would recurse.
+CREATE OR REPLACE FUNCTION rls_user_role(uid bigint)
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $fn$
+BEGIN
+    IF uid IS NULL THEN
+        RETURN NULL;
+    END IF;
+    RETURN (SELECT u.role FROM users u WHERE u.id = uid);
+END
+$fn$;
+
+-- True when the pool hook stamped app.rls_bypass (boot, seed, or a privileged pool).
 CREATE OR REPLACE FUNCTION rls_is_bypass()
 RETURNS boolean
 LANGUAGE plpgsql
 STABLE
 AS $fn$
 BEGIN
-    IF current_user IS DISTINCT FROM 'lariv_website_app' THEN
-        RETURN true;
-    END IF;
     BEGIN
         -- An empty setting is not a bypass. NULL IN (...) is NULL, and
         -- NOT NULL skips the non-superuser company fallback.
@@ -1036,6 +1049,7 @@ DECLARE
     trg record;
     con_name text;
     col_list text;
+    grantee text;
 BEGIN
     -- Treat policy install / migration DML on this connection as privileged.
     PERFORM set_config('app.rls_bypass', '1', false);
@@ -1224,7 +1238,10 @@ BEGIN
                 CREATE POLICY rls_update ON users
                 FOR UPDATE
                 USING (id = rls_current_user_id())
-                WITH CHECK (id = rls_current_user_id())
+                WITH CHECK (
+                    id = rls_current_user_id()
+                    AND role IS NOT DISTINCT FROM rls_user_role(id)
+                )
             $pol$;
             CONTINUE;
         END IF;
@@ -1873,10 +1890,41 @@ BEGIN
         END IF;
     END LOOP;
 
-    EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO lariv_website_app';
-    EXECUTE 'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO lariv_website_app';
-    EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lariv_website_app';
-    EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO lariv_website_app';
+    FOR rec IN
+        SELECT c.relname
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind = 'r'
+          AND c.relrowsecurity
+    LOOP
+        EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', rec.relname);
+    END LOOP;
+
+    FOR grantee IN
+        SELECT r.rolname
+        FROM pg_roles r
+        WHERE r.rolname = current_user
+           OR r.rolname = 'lariv_rls'
+    LOOP
+        EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', grantee);
+        EXECUTE format(
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I',
+            grantee
+        );
+        EXECUTE format(
+            'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I',
+            grantee
+        );
+        EXECUTE format(
+            'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I',
+            grantee
+        );
+        EXECUTE format(
+            'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO %I',
+            grantee
+        );
+    END LOOP;
 END
 $fn$;
 
@@ -1886,22 +1934,62 @@ DROP FUNCTION IF EXISTS rls_revoke(regclass, bigint, bigint);
 REVOKE ALL ON FUNCTION rls_backfill(bigint) FROM PUBLIC;
 REVOKE ALL ON FUNCTION rls_admin_company_id(bigint) FROM PUBLIC;
 REVOKE ALL ON FUNCTION rls_find_user_by_email(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION rls_find_user_by_email(text) TO lariv_website_app;
 REVOKE ALL ON FUNCTION rls_signup_user(text, text, text, bytea, bytea, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION rls_signup_user(text, text, text, bytea, bytea, text) TO lariv_website_app;
-GRANT EXECUTE ON FUNCTION rls_is_company_member(bigint) TO lariv_website_app;
-GRANT EXECUTE ON FUNCTION rls_is_company_owner(bigint) TO lariv_website_app;
-GRANT EXECUTE ON FUNCTION rls_company_has_members(bigint) TO lariv_website_app;
-GRANT EXECUTE ON FUNCTION rls_current_company_id() TO lariv_website_app;
-GRANT EXECUTE ON FUNCTION rls_resolve_active_company() TO lariv_website_app;
-GRANT EXECUTE ON FUNCTION rls_is_superuser() TO lariv_website_app;
-GRANT EXECUTE ON FUNCTION rls_is_bypass() TO lariv_website_app;
-GRANT EXECUTE ON FUNCTION rls_row_visible_optional_company(regclass, bigint[]) TO lariv_website_app;
 REVOKE ALL ON FUNCTION rls_filesystem_pref_visible(regclass, bigint) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION rls_filesystem_pref_visible(regclass, bigint) TO lariv_website_app;
-GRANT EXECUTE ON FUNCTION rls_own_new_row_optional_company() TO lariv_website_app;
 REVOKE ALL ON FUNCTION rls_public_website_vnode(bigint) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION rls_public_website_vnode(bigint) TO lariv_website_app;
+REVOKE ALL ON FUNCTION rls_user_role(bigint) FROM PUBLIC;
 REVOKE ALL ON FUNCTION rls_install_public_website_table(text) FROM PUBLIC;
+
+-- Login roles that skip row-level security SET ROLE here for request traffic.
+-- NOLOGIN: nothing connects as this role. The login in database_url stays put.
+DO $role$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_roles
+        WHERE rolname = current_user AND (rolsuper OR rolcreaterole)
+    ) THEN
+        RETURN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lariv_rls') THEN
+        CREATE ROLE lariv_rls NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
+    ELSE
+        ALTER ROLE lariv_rls WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
+    END IF;
+    EXECUTE format('GRANT lariv_rls TO %I', current_user);
+END
+$role$;
+
+DO $grant$
+DECLARE
+    role_name text;
+BEGIN
+    FOR role_name IN
+        SELECT r.rolname
+        FROM pg_roles r
+        WHERE r.rolname = current_user
+           OR r.rolname = 'lariv_rls'
+    LOOP
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_find_user_by_email(text) TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_signup_user(text, text, text, bytea, bytea, text) TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_is_company_member(bigint) TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_is_company_owner(bigint) TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_company_has_members(bigint) TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_current_company_id() TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_current_user_id() TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_resolve_active_company() TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_is_superuser() TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_user_role(bigint) TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_is_bypass() TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_row_visible(regclass, bigint[]) TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_row_visible_optional_company(regclass, bigint[]) TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_filesystem_pref_visible(regclass, bigint) TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_own_new_row() TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_own_new_row_optional_company() TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_unique_per_owner() TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_membership_keep_owner() TO %I', role_name);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION rls_public_website_vnode(bigint) TO %I', role_name);
+    END LOOP;
+END
+$grant$;
 
 DO $$ BEGIN PERFORM rls_install_policies(); END $$;

@@ -6,11 +6,14 @@ description = "Assistant preferences, sidebar link, and company app access for t
 
 [dependencies]
 lariv-core = { workspace = true }
+website-plugin-rls = { path = "../rls" }
 # Same `cap-llm` requirement as the accounting sidebar: companies templates
 # call `block_on_async`, which is only compiled in with that feature.
 lariv-plugin-bank-accounts = { workspace = true }
 lariv-plugin-companies = { workspace = true, features = ["cap-llm"] }
 lariv-plugin-contacts = { workspace = true }
+lariv-plugin-crm = { workspace = true }
+lariv-plugin-customer = { workspace = true }
 lariv-plugin-filesystem = { workspace = true }
 lariv-plugin-finance-accounts = { workspace = true }
 lariv-plugin-finance-creditnotes = { workspace = true }

@@ -71,15 +71,7 @@ where
     fn attach_state(app: App<L>) -> App<Self::Output> {
         let configs = &app.get_capability::<ConfigTag, CfgIdx>().items;
         let app_cfg = <Configs as GetByTag<AppConfigTag, AppCfgIdx>>::get_by_tag(configs);
-        let admin_url = app_cfg
-            .admin_database_url
-            .as_deref()
-            .filter(|url| !url.is_empty())
-            .map(str::to_owned);
-        if admin_url.is_none() {
-            tracing::warn!("admin_database_url is unset; global API key fallbacks are inactive");
-        }
-        preferences::register(admin_url);
+        preferences::register(app_cfg.database_url.clone());
         let db = app.get_capability::<DbTag, DbIdx>().items.conn.clone();
         app.add_capability(CapStore::with_items(GlobalPreferencesState { db }))
     }

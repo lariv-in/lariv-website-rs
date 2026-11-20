@@ -1,26 +1,24 @@
-//! Load assistant preferences through the admin connection.
+//! Load assistant preferences through a privileged connection.
 //!
-//! The serving role cannot see another company's preferences row. Background workers
-//! (IMAP, cron) need every configured row, so they read through the owner role and
-//! then act as that company's owner.
+//! A request checkout only sees the active company's row. Background workers
+//! (IMAP, cron) need every configured row, so they read with `app.rls_bypass`
+//! and then act as that company's owner.
 
 use std::sync::Arc;
 
 use lariv_plugin_llm_assistant::entities::llm_assistant_preferences::Entity as AssistantPrefs;
 use lariv_plugin_llm_assistant::preferences::BackgroundPreferences;
-use sea_orm::{
-    ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, EntityTrait, Statement,
-};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Statement};
 use tokio::sync::OnceCell;
 
 pub struct AdminPreferences {
-    admin_url: String,
+    database_url: String,
     admin: OnceCell<DatabaseConnection>,
 }
 
-pub fn register(admin_url: String) {
+pub fn register(database_url: String) {
     let source = Arc::new(AdminPreferences {
-        admin_url,
+        database_url,
         admin: OnceCell::new(),
     });
     lariv_plugin_llm_assistant::preferences::set_background_preferences(source);
@@ -29,7 +27,7 @@ pub fn register(admin_url: String) {
 impl AdminPreferences {
     async fn admin(&self) -> Result<&DatabaseConnection, sea_orm::DbErr> {
         self.admin
-            .get_or_try_init(|| Database::connect(self.admin_url.as_str()))
+            .get_or_try_init(|| website_plugin_rls::connect_privileged(self.database_url.as_str()))
             .await
     }
 }

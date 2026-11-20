@@ -1,22 +1,17 @@
 //! Company membership isolates rows once policies are installed.
 //!
-//! Skips unless `ADMIN_DATABASE_URL` is set. The test applies the policy script to
-//! that database, so point it at a disposable copy of the website schema.
+//! Skips unless `DATABASE_URL` or `ADMIN_DATABASE_URL` is set. The test applies the
+//! policy script to that database, so point it at a disposable copy of the website schema.
 
 use sea_orm::sqlx::{Executor, Row};
 use sea_orm::{ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement};
 
 #[tokio::test]
 async fn two_companies_cannot_see_each_others_currencies() {
-    let Ok(admin_url) = std::env::var("ADMIN_DATABASE_URL") else {
+    let Some(admin_url) = configured_database_url() else {
         return;
     };
-    if admin_url.is_empty() {
-        return;
-    }
-    let admin = Database::connect(&admin_url)
-        .await
-        .expect("admin connection");
+    let admin = connect_admin(&admin_url).await;
     let ready: bool = admin
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -34,10 +29,6 @@ async fn two_companies_cannot_see_each_others_currencies() {
         return;
     }
 
-    let app_url = app_url_from_admin(&admin_url);
-    website_plugin_rls::ensure_login_role(&admin_url, &app_url)
-        .await
-        .expect("login role");
     admin
         .execute_unprepared(website_plugin_rls::install_sql())
         .await
@@ -54,7 +45,7 @@ async fn two_companies_cannot_see_each_others_currencies() {
     let company_b = insert_company(&admin, owner_b, &format!("Co B {stamp}")).await;
     add_member(&admin, company_a, member, false).await;
 
-    let app = Database::connect(&app_url).await.expect("app connection");
+    let app = connect_subject(&admin, &admin_url).await;
     let code = (stamp % 1_000_000) as i32;
     let id_a = insert_currency(&app, owner_a, company_a, code).await;
     let id_b = insert_currency(&app, owner_b, company_b, code).await;
@@ -124,15 +115,10 @@ async fn two_companies_cannot_see_each_others_currencies() {
 
 #[tokio::test]
 async fn switching_active_company_hides_other_company_rows() {
-    let Ok(admin_url) = std::env::var("ADMIN_DATABASE_URL") else {
+    let Some(admin_url) = configured_database_url() else {
         return;
     };
-    if admin_url.is_empty() {
-        return;
-    }
-    let admin = Database::connect(&admin_url)
-        .await
-        .expect("admin connection");
+    let admin = connect_admin(&admin_url).await;
     let ready: bool = admin
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -146,10 +132,6 @@ async fn switching_active_company_hides_other_company_rows() {
     if !ready {
         return;
     }
-    let app_url = app_url_from_admin(&admin_url);
-    website_plugin_rls::ensure_login_role(&admin_url, &app_url)
-        .await
-        .expect("login role");
     admin
         .execute_unprepared(website_plugin_rls::install_sql())
         .await
@@ -162,7 +144,7 @@ async fn switching_active_company_hides_other_company_rows() {
     let user = insert_user(&admin, &format!("rls-switch-{stamp}@example.com")).await;
     let company_a = insert_company(&admin, user, &format!("Switch A {stamp}")).await;
     let company_b = insert_company(&admin, user, &format!("Switch B {stamp}")).await;
-    let app = Database::connect(&app_url).await.expect("app connection");
+    let app = connect_subject(&admin, &admin_url).await;
     let code = (stamp % 1_000_000) as i32;
     let id_a = insert_currency(&app, user, company_a, code).await;
     let id_b = insert_currency(&app, user, company_b, code + 1).await;
@@ -193,24 +175,15 @@ async fn switching_active_company_hides_other_company_rows() {
 
 #[tokio::test]
 async fn cloned_catalog_rows_stay_private_to_company() {
-    let Ok(admin_url) = std::env::var("ADMIN_DATABASE_URL") else {
+    let Some(admin_url) = configured_database_url() else {
         return;
     };
-    if admin_url.is_empty() {
-        return;
-    }
-    let admin = Database::connect(&admin_url)
-        .await
-        .expect("admin connection");
-    let app_url = app_url_from_admin(&admin_url);
-    website_plugin_rls::ensure_login_role(&admin_url, &app_url)
-        .await
-        .expect("login role");
+    let admin = connect_admin(&admin_url).await;
     admin
         .execute_unprepared(website_plugin_rls::install_sql())
         .await
         .expect("install policies");
-    let app = Database::connect(&app_url).await.expect("app connection");
+    let app = connect_subject(&admin, &admin_url).await;
 
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -312,15 +285,10 @@ async fn cloned_catalog_rows_stay_private_to_company() {
 
 #[tokio::test]
 async fn indian_defaults_are_copied_onto_a_new_company() {
-    let Ok(admin_url) = std::env::var("ADMIN_DATABASE_URL") else {
+    let Some(admin_url) = configured_database_url() else {
         return;
     };
-    if admin_url.is_empty() {
-        return;
-    }
-    let admin = Database::connect(&admin_url)
-        .await
-        .expect("admin connection");
+    let admin = connect_admin(&admin_url).await;
     let template: Option<i64> = admin
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -608,15 +576,10 @@ async fn delete_owned_indian_rows(admin: &DatabaseConnection, company_id: i64) {
 
 #[tokio::test]
 async fn gemini_key_stays_on_its_row() {
-    let Ok(admin_url) = std::env::var("ADMIN_DATABASE_URL") else {
+    let Some(admin_url) = configured_database_url() else {
         return;
     };
-    if admin_url.is_empty() {
-        return;
-    }
-    let admin = Database::connect(&admin_url)
-        .await
-        .expect("admin connection");
+    let admin = connect_admin(&admin_url).await;
     let ready: bool = admin
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -633,10 +596,6 @@ async fn gemini_key_stays_on_its_row() {
         return;
     }
 
-    let app_url = app_url_from_admin(&admin_url);
-    website_plugin_rls::ensure_login_role(&admin_url, &app_url)
-        .await
-        .expect("login role");
     admin
         .execute_unprepared(website_plugin_rls::install_sql())
         .await
@@ -677,7 +636,7 @@ async fn gemini_key_stays_on_its_row() {
 
     let member = insert_user(&admin, &format!("rls-gemini-member-{stamp}@example.com")).await;
     let company = insert_company(&admin, member, &format!("Gemini Co {stamp}")).await;
-    let app = Database::connect(&app_url).await.expect("app connection");
+    let app = connect_subject(&admin, &admin_url).await;
     let member_pref = insert_preference_as(&app, member, company, "member-typed-key").await;
     let stored = preference_key(&admin, member_pref).await;
     assert_eq!(stored, "member-typed-key", "insert keeps the member key");
@@ -933,23 +892,408 @@ async fn update_preference_key_as(
     stored
 }
 
-fn app_url_from_admin(admin_url: &str) -> String {
-    if let Ok(url) = std::env::var("DATABASE_URL") {
-        if url.contains("lariv_website_app") {
-            return url;
+#[tokio::test]
+async fn clone_catalogs_fills_existing_companies() {
+    let Some(admin_url) = configured_database_url() else {
+        return;
+    };
+    let admin = connect_admin(&admin_url).await;
+    let ready: bool = admin
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT to_regclass('public.accounts') IS NOT NULL
+                    AND to_regclass('public.companies') IS NOT NULL AS ready"
+                .to_owned(),
+        ))
+        .await
+        .expect("schema probe")
+        .expect("schema probe row")
+        .try_get("", "ready")
+        .expect("ready flag");
+    if !ready {
+        eprintln!("skipping catalog clone repair: accounts missing");
+        return;
+    }
+
+    admin
+        .execute_unprepared(website_plugin_rls::install_sql())
+        .await
+        .expect("install policies");
+
+    let template = admin
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT m.company_id AS id
+             FROM users u
+             JOIN company_memberships m ON m.user_id = u.id AND m.owned_by
+             WHERE u.role = 'superuser'
+             ORDER BY m.id
+             LIMIT 1"
+                .to_owned(),
+        ))
+        .await
+        .expect("template lookup")
+        .expect("template company");
+    let template_id: i64 = template.try_get("", "id").expect("id");
+    website_plugin_rls::collapse_duplicate_catalog(&admin, template_id)
+        .await
+        .expect("collapse template");
+    let others = admin
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT id FROM companies WHERE id <> $1 ORDER BY id",
+            [template_id.into()],
+        ))
+        .await
+        .expect("list companies");
+    for row in others {
+        let company_id: i64 = row.try_get("", "id").expect("id");
+        website_plugin_rls::clone_catalogs(&admin, template_id, company_id)
+            .await
+            .expect("clone catalogs");
+        website_plugin_rls::ensure_indian_defaults(&admin, template_id, company_id)
+            .await
+            .expect("indian defaults");
+        let accounts = owned_account_count(&admin, company_id).await;
+        assert!(
+            accounts > 5,
+            "company {company_id} should own a full chart after clone, got {accounts}"
+        );
+    }
+}
+
+async fn owned_account_count(admin: &DatabaseConnection, company_id: i64) -> i64 {
+    let owners = admin
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT rls_owners_name('accounts') AS name".to_owned(),
+        ))
+        .await
+        .expect("owners name")
+        .expect("owners row");
+    let owners: String = owners.try_get("", "name").expect("name");
+    let row = admin
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!("SELECT count(*)::bigint AS n FROM {owners} WHERE company_id = $1"),
+            [company_id.into()],
+        ))
+        .await
+        .expect("count")
+        .expect("count row");
+    row.try_get("", "n").expect("n")
+}
+
+#[tokio::test]
+async fn member_cannot_delete_other_company_journal() {
+    let Some(admin_url) = configured_database_url() else {
+        return;
+    };
+    let admin = connect_admin(&admin_url).await;
+    let ready: bool = admin
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT to_regclass('public.journals') IS NOT NULL
+                    AND to_regclass('public.company_memberships') IS NOT NULL AS ready"
+                .to_owned(),
+        ))
+        .await
+        .expect("schema probe")
+        .expect("schema probe row")
+        .try_get("", "ready")
+        .expect("ready flag");
+    if !ready {
+        eprintln!("skipping rls isolation test: journals missing");
+        return;
+    }
+
+    admin
+        .execute_unprepared(website_plugin_rls::install_sql())
+        .await
+        .expect("install policies");
+
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let owner_a = insert_user(&admin, &format!("rls-jdel-a-{stamp}@example.com")).await;
+    let owner_b = insert_user(&admin, &format!("rls-jdel-b-{stamp}@example.com")).await;
+    let company_a = insert_company(&admin, owner_a, &format!("JDel A {stamp}")).await;
+    let company_b = insert_company(&admin, owner_b, &format!("JDel B {stamp}")).await;
+    let currency = insert_owned_currency(&admin, company_a, (stamp % 1_000_000) as i32).await;
+    let journal = insert_owned_journal(&admin, company_a, currency, &format!("JDel {stamp}")).await;
+
+    let app = connect_subject(&admin, &admin_url).await;
+    assert!(
+        !can_delete_journal(&app, owner_b, company_b, journal).await,
+        "member of B must not delete A's journal"
+    );
+    assert!(
+        can_delete_journal(&app, owner_a, company_a, journal).await,
+        "owner of A may delete A's journal"
+    );
+
+    let _ = admin
+        .execute_unprepared(
+            "ALTER TABLE company_memberships DISABLE TRIGGER rls_membership_keep_owner",
+        )
+        .await;
+    cleanup_companies(&admin, &[company_a, company_b], &[currency], 0).await;
+    let _ = admin
+        .execute_unprepared(
+            "ALTER TABLE company_memberships ENABLE TRIGGER rls_membership_keep_owner",
+        )
+        .await;
+    for user_id in [owner_a, owner_b] {
+        let _ = admin
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "DELETE FROM users WHERE id = $1",
+                [user_id.into()],
+            ))
+            .await;
+    }
+}
+
+#[tokio::test]
+async fn superuser_set_role_hides_other_companies() {
+    let Some(admin_url) = configured_database_url() else {
+        return;
+    };
+    let admin = connect_admin(&admin_url).await;
+    let ready: bool = admin
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT to_regclass('public.companies') IS NOT NULL
+                    AND to_regclass('public.company_memberships') IS NOT NULL AS ready"
+                .to_owned(),
+        ))
+        .await
+        .expect("schema probe")
+        .expect("schema probe row")
+        .try_get("", "ready")
+        .expect("ready flag");
+    if !ready {
+        eprintln!("skipping rls isolation test: companies missing");
+        return;
+    }
+
+    admin
+        .execute_unprepared(website_plugin_rls::install_sql())
+        .await
+        .expect("install policies");
+
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let owner = insert_user(&admin, &format!("rls-role-{stamp}@example.com")).await;
+    let outsider = insert_user(&admin, &format!("rls-role-out-{stamp}@example.com")).await;
+    let company = insert_company(&admin, owner, &format!("Role Co {stamp}")).await;
+    let other = insert_company(&admin, outsider, &format!("Other Co {stamp}")).await;
+
+    let as_role = visible_company_ids(&admin, owner, true).await;
+    assert!(
+        as_role.contains(&company),
+        "request role should see the caller's company: {as_role:?}"
+    );
+    assert!(
+        !as_role.contains(&other),
+        "request role must hide companies the caller does not belong to: {as_role:?}"
+    );
+    let as_super = visible_company_ids(&admin, owner, false).await;
+    assert!(
+        as_super.contains(&other),
+        "superuser login still sees every company before SET ROLE: {as_super:?}"
+    );
+
+    let _ = admin
+        .execute_unprepared(
+            "ALTER TABLE company_memberships DISABLE TRIGGER rls_membership_keep_owner",
+        )
+        .await;
+    cleanup_companies(&admin, &[company, other], &[], 0).await;
+    let _ = admin
+        .execute_unprepared(
+            "ALTER TABLE company_memberships ENABLE TRIGGER rls_membership_keep_owner",
+        )
+        .await;
+    for user_id in [owner, outsider] {
+        let _ = admin
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "DELETE FROM users WHERE id = $1",
+                [user_id.into()],
+            ))
+            .await;
+    }
+}
+
+async fn visible_company_ids(admin: &DatabaseConnection, user_id: i64, set_role: bool) -> Vec<i64> {
+    let mut conn = admin
+        .get_postgres_connection_pool()
+        .acquire()
+        .await
+        .expect("acquire");
+    conn.execute("BEGIN").await.expect("begin");
+    sea_orm::sqlx::query("SELECT set_config('app.rls_bypass', '', true)")
+        .execute(&mut *conn)
+        .await
+        .expect("clear bypass");
+    sea_orm::sqlx::query("SELECT set_config('app.user_id', $1, true)")
+        .bind(user_id.to_string())
+        .execute(&mut *conn)
+        .await
+        .expect("set user");
+    sea_orm::sqlx::query("SELECT set_config('app.company_id', '', true)")
+        .execute(&mut *conn)
+        .await
+        .expect("clear company");
+    if set_role {
+        sea_orm::sqlx::query("SET LOCAL ROLE lariv_rls")
+            .execute(&mut *conn)
+            .await
+            .expect("set role");
+    }
+    let rows = sea_orm::sqlx::query("SELECT id FROM companies ORDER BY id")
+        .fetch_all(&mut *conn)
+        .await
+        .expect("list companies");
+    let ids = rows
+        .iter()
+        .map(|row| row.try_get("id").expect("id"))
+        .collect();
+    conn.execute("ROLLBACK").await.expect("rollback");
+    ids
+}
+
+fn configured_database_url() -> Option<String> {
+    for key in ["DATABASE_URL", "ADMIN_DATABASE_URL"] {
+        if let Ok(url) = std::env::var(key) {
+            if !url.is_empty() {
+                return Some(url);
+            }
         }
     }
-    let Some((scheme, rest)) = admin_url.split_once("://") else {
-        return admin_url.to_owned();
+    None
+}
+
+async fn connect_admin(url: &str) -> DatabaseConnection {
+    website_plugin_rls::connect_privileged(url)
+        .await
+        .expect("database connection")
+}
+
+/// Connection that policies apply to.
+///
+/// A superuser or `BYPASSRLS` role never sees policies, so those URLs get a
+/// disposable non-owner login. Any other user is used as-is.
+async fn connect_subject(admin: &DatabaseConnection, url: &str) -> DatabaseConnection {
+    let row = admin
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user".to_owned(),
+        ))
+        .await
+        .expect("role attributes")
+        .expect("role row");
+    let superuser: bool = row.try_get("", "rolsuper").expect("rolsuper");
+    let bypass: bool = row.try_get("", "rolbypassrls").expect("rolbypassrls");
+    if !superuser && !bypass {
+        return Database::connect(url).await.expect("subject connection");
+    }
+    let password = quote_literal(&url_password(url));
+    admin
+        .execute_unprepared(&format!(
+            "DO $lariv_rls_role$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lariv_rls_test') THEN
+                    CREATE ROLE lariv_rls_test LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD {password};
+                ELSE
+                    ALTER ROLE lariv_rls_test WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD {password};
+                END IF;
+            END $lariv_rls_role$;"
+        ))
+        .await
+        .expect("subject role");
+    let database = url_database(url);
+    if !database.is_empty() {
+        let database = quote_ident(&database);
+        admin
+            .execute_unprepared(&format!(
+                "GRANT CONNECT ON DATABASE {database} TO lariv_rls_test"
+            ))
+            .await
+            .expect("grant connect");
+    }
+    admin
+        .execute_unprepared(
+            "GRANT USAGE ON SCHEMA public TO lariv_rls_test;
+             GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO lariv_rls_test;
+             GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_find_user_by_email(text) TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_signup_user(text, text, text, bytea, bytea, text) TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_is_company_member(bigint) TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_is_company_owner(bigint) TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_company_has_members(bigint) TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_current_company_id() TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_resolve_active_company() TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_is_superuser() TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_user_role(bigint) TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_is_bypass() TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_row_visible_optional_company(regclass, bigint[]) TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_filesystem_pref_visible(regclass, bigint) TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_own_new_row_optional_company() TO lariv_rls_test;
+             GRANT EXECUTE ON FUNCTION rls_public_website_vnode(bigint) TO lariv_rls_test;",
+        )
+        .await
+        .expect("grant subject");
+    Database::connect(&replace_user(url, "lariv_rls_test"))
+        .await
+        .expect("subject connection")
+}
+
+fn url_password(url: &str) -> String {
+    let Some((_, rest)) = url.split_once("://") else {
+        return String::new();
+    };
+    let Some((userinfo, _)) = rest.split_once('@') else {
+        return String::new();
+    };
+    userinfo
+        .split_once(':')
+        .map(|(_, password)| password.to_owned())
+        .unwrap_or_default()
+}
+
+fn url_database(url: &str) -> String {
+    let Some((_, rest)) = url.split_once("://") else {
+        return String::new();
+    };
+    let host = rest.split_once('@').map(|(_, host)| host).unwrap_or(rest);
+    host.split_once('/')
+        .map(|(_, database)| database.split('?').next().unwrap_or("").to_owned())
+        .unwrap_or_default()
+}
+
+fn replace_user(url: &str, username: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_owned();
     };
     let Some((userinfo, host)) = rest.split_once('@') else {
-        return admin_url.to_owned();
+        return format!("{scheme}://{username}@{rest}");
     };
-    let password = userinfo
-        .split_once(':')
-        .map(|(_, password)| password)
-        .unwrap_or("");
-    format!("{scheme}://lariv_website_app:{password}@{host}")
+    match userinfo.split_once(':') {
+        Some((_, password)) => format!("{scheme}://{username}:{password}@{host}"),
+        None => format!("{scheme}://{username}@{host}"),
+    }
+}
+
+fn quote_ident(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+fn quote_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 async fn insert_user(admin: &DatabaseConnection, email: &str) -> i64 {
@@ -1007,6 +1351,93 @@ async fn add_member(admin: &DatabaseConnection, company_id: i64, user_id: i64, o
         ))
         .await
         .expect("add member");
+}
+
+async fn insert_owned_currency(admin: &DatabaseConnection, company_id: i64, code: i32) -> i64 {
+    let row = admin
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO currencies (created_at, updated_at, code, name, symbol, minor_unit)
+             VALUES (now(), now(), $1, 'RLS test', 'T', 2)
+             RETURNING id",
+            [code.into()],
+        ))
+        .await
+        .expect("insert currency")
+        .expect("currency id");
+    let id: i64 = row.try_get("", "id").expect("id");
+    let owners = currency_owners_table(admin).await;
+    admin
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!("INSERT INTO {owners} (record_id, company_id) VALUES ($1, $2)
+                     ON CONFLICT DO NOTHING"),
+            [id.into(), company_id.into()],
+        ))
+        .await
+        .expect("own currency");
+    id
+}
+
+async fn insert_owned_journal(
+    admin: &DatabaseConnection,
+    company_id: i64,
+    currency_id: i64,
+    name: &str,
+) -> i64 {
+    let row = admin
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO journals (created_at, updated_at, name, is_active, currency_id, is_mutable)
+             VALUES (now(), now(), $1, true, $2, true)
+             RETURNING id",
+            [name.into(), currency_id.into()],
+        ))
+        .await
+        .expect("insert journal")
+        .expect("journal id");
+    let id: i64 = row.try_get("", "id").expect("id");
+    let owners = journal_owners_table(admin).await;
+    admin
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!("INSERT INTO {owners} (record_id, company_id) VALUES ($1, $2)
+                     ON CONFLICT DO NOTHING"),
+            [id.into(), company_id.into()],
+        ))
+        .await
+        .expect("own journal");
+    id
+}
+
+async fn can_delete_journal(
+    app: &DatabaseConnection,
+    user_id: i64,
+    company_id: i64,
+    journal_id: i64,
+) -> bool {
+    let mut conn = app
+        .get_postgres_connection_pool()
+        .acquire()
+        .await
+        .expect("acquire");
+    conn.execute("BEGIN").await.expect("begin");
+    sea_orm::sqlx::query("SELECT set_config('app.user_id', $1, true)")
+        .bind(user_id.to_string())
+        .execute(&mut *conn)
+        .await
+        .expect("set user");
+    sea_orm::sqlx::query("SELECT set_config('app.company_id', $1, true)")
+        .bind(company_id.to_string())
+        .execute(&mut *conn)
+        .await
+        .expect("set company");
+    let result = sea_orm::sqlx::query("DELETE FROM journals WHERE id = $1")
+        .bind(journal_id)
+        .execute(&mut *conn)
+        .await;
+    let _ = conn.execute("ROLLBACK").await;
+    result.map(|r| r.rows_affected() > 0).unwrap_or(false)
 }
 
 async fn insert_currency(

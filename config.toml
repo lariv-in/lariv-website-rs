@@ -1,8 +1,6 @@
 # Postgres is recommended (blog tags use ltree). SQLite is fine for `cargo test` only.
-# Migrations use the admin URL. The server logs in as lariv_website_app, which
-# cannot bypass row-level security.
-admin_database_url = "postgres://postgres:0708@localhost:5432/lariv_website"
-database_url = "postgres://lariv_website_app:0708@localhost:5432/lariv_website"
+# One connection string. The user in it can be any role.
+database_url = "postgres://postgres:0708@localhost:5432/lariv_website"
 bind = "0.0.0.0:42069"
 
 [users]

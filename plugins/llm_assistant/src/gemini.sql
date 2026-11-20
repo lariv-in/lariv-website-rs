@@ -68,6 +68,10 @@ $fn$;
 REVOKE ALL ON FUNCTION rls_canonical_gemini_pref() FROM PUBLIC;
 REVOKE ALL ON FUNCTION rls_install_gemini_key() FROM PUBLIC;
 REVOKE ALL ON FUNCTION rls_align_gemini_key() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION rls_align_gemini_key() TO lariv_website_app;
+DO $grant$
+BEGIN
+    EXECUTE format('GRANT EXECUTE ON FUNCTION rls_align_gemini_key() TO %I', current_user);
+END
+$grant$;
 
 DO $$ BEGIN PERFORM rls_install_gemini_key(); END $$;

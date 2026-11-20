@@ -8,8 +8,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, Database, DatabaseConnection, DbErr, EntityTrait,
-    QuerySelect,
+    ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr, EntityTrait, QuerySelect,
 };
 use tokio::sync::OnceCell;
 
@@ -24,13 +23,13 @@ use super::entities::{
 const SINGLETON_ID: i64 = 1;
 
 pub struct GlobalCredentials {
-    admin_url: Option<String>,
+    database_url: String,
     admin: OnceCell<DatabaseConnection>,
 }
 
-pub fn register(admin_url: Option<String>) {
+pub fn register(database_url: String) {
     let source = Arc::new(GlobalCredentials {
-        admin_url,
+        database_url,
         admin: OnceCell::new(),
     });
     set_shared_llm_credentials(source);
@@ -77,12 +76,12 @@ pub async fn save_preferences(
 
 impl GlobalCredentials {
     async fn admin(&self) -> Result<Option<&DatabaseConnection>, DbErr> {
-        let Some(url) = self.admin_url.as_deref() else {
+        if self.database_url.is_empty() {
             return Ok(None);
-        };
+        }
         let conn = self
             .admin
-            .get_or_try_init(|| Database::connect(url))
+            .get_or_try_init(|| website_plugin_rls::connect_privileged(self.database_url.as_str()))
             .await?;
         Ok(Some(conn))
     }

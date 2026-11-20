@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
     let app = rls::install(app);
     let app = assistant::install(app);
 
-    rls::prepare_database("config.toml").await?;
+    rls::prepare_database().await?;
     let app = app.load_config("config.toml").await?;
     let app = app.mount();
     app.run_migrations().await?;

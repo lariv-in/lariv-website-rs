@@ -1,8 +1,8 @@
 //! Deployment wiring for the LLM assistant and company app access.
 //!
 //! The framework plugin owns chat, tools, and routes. This plugin owns the pieces
-//! that depend on this website's row-level security: loading preferences as the
-//! admin role, and opening Accounting and the linked apps (including the
+//! that depend on this website's row-level security: loading preferences with
+//! bypass, and opening Accounting and the linked apps (including the
 //! assistant) to company roles. Site-wide API key fallbacks live in the global
 //! preferences app.
 
@@ -65,16 +65,10 @@ where
     fn attach_state(app: App<L>) -> App<Self::Output> {
         let configs = &app.get_capability::<ConfigTag, CfgIdx>().items;
         let app_cfg = <Configs as GetByTag<AppConfigTag, AppCfgIdx>>::get_by_tag(configs);
-        if let Some(admin_url) = app_cfg
-            .admin_database_url
-            .as_deref()
-            .filter(|url| !url.is_empty())
-        {
-            preferences::register(admin_url.to_owned());
+        if app_cfg.database_url.is_empty() {
+            tracing::warn!("database_url is unset; assistant background preferences are inactive");
         } else {
-            tracing::warn!(
-                "admin_database_url is unset; assistant background preferences are inactive"
-            );
+            preferences::register(app_cfg.database_url.clone());
         }
         app.add_capability(CapStore::with_items(AssistantDeployState))
     }

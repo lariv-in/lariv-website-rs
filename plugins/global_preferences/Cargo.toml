@@ -7,6 +7,7 @@ description = "Site-wide Gemini and Google Search API keys used when a user has 
 [dependencies]
 lariv-core = { workspace = true }
 lariv-plugin-llm-assistant = { workspace = true }
+website-plugin-rls = { path = "../rls" }
 lariv-plugin-users = { workspace = true }
 async-trait = "0.1"
 axum = "0.8"

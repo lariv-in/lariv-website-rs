@@ -1,18 +1,24 @@
-//! Create the non-owner login role and install the session-user checkout hook.
+//! Stamp the request user on every pooled connection.
+//!
+//! The process uses one database login: whoever `database_url` names. Boot sets
+//! `app.rls_bypass` until serve startup finishes. Request checkouts do not.
+//! A superuser login skips policies, so those request checkouts `SET ROLE lariv_rls`.
 
 use std::sync::Once;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::time::Duration;
 
 use futures_util::FutureExt;
 use lariv_core::db::{self, db_actor};
 use lariv_plugin_users::role_authorization::current_auth;
 use sea_orm::sqlx;
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
-use url::Url;
-
-pub const APP_ROLE: &str = "lariv_website_app";
+use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
 
 static HOOK: Once = Once::new();
+
+/// Migrations, seeds, and serve-startup run before any request. Cleared by the
+/// row-level security serve-startup hook, which is installed last.
+static BOOT_PRIVILEGED: AtomicBool = AtomicBool::new(true);
 
 /// Admin id used for pool checkouts while serve startup is still running.
 ///
@@ -33,6 +39,11 @@ pub fn set_startup_company(id: i64) {
 pub fn clear_startup_user() {
     STARTUP_USER.store(0, Ordering::Release);
     STARTUP_COMPANY.store(0, Ordering::Release);
+}
+
+/// Request traffic is subject to the policies. Call after serve startup.
+pub fn end_boot_privilege() {
+    BOOT_PRIVILEGED.store(false, Ordering::Release);
 }
 
 fn startup_user() -> Option<i64> {
@@ -56,106 +67,33 @@ pub fn install_session_hook() {
     });
 }
 
-/// Create `lariv_website_app` from the admin URL before the serving pool connects.
-pub async fn prepare_database(config_path: &str) -> anyhow::Result<()> {
+/// Install the checkout hook before [`lariv_core::app::App::load_config`] opens the pool.
+pub async fn prepare_database() -> anyhow::Result<()> {
     install_session_hook();
-    let raw = std::fs::read_to_string(config_path)?;
-    let root: toml::Value = toml::from_str(&raw)?;
-    let mut admin_url = root
-        .get("admin_database_url")
-        .and_then(toml::Value::as_str)
-        .unwrap_or("")
-        .to_owned();
-    let mut app_url = root
-        .get("database_url")
-        .and_then(toml::Value::as_str)
-        .unwrap_or("")
-        .to_owned();
-    if let Ok(url) = std::env::var("ADMIN_DATABASE_URL") {
-        if !url.is_empty() {
-            admin_url = url;
-        }
-    }
-    if let Ok(url) = std::env::var("DATABASE_URL") {
-        if !url.is_empty() {
-            app_url = url;
-        }
-    }
-    if admin_url.is_empty() {
-        anyhow::bail!("admin_database_url is required for row-level security");
-    }
-    if app_url.is_empty() {
-        anyhow::bail!("database_url is required for row-level security");
-    }
-    ensure_login_role(&admin_url, &app_url).await
-}
-
-pub async fn ensure_login_role(admin_url: &str, app_url: &str) -> anyhow::Result<()> {
-    let app = Url::parse(app_url)?;
-    let username = percent_decode(app.username());
-    if username != APP_ROLE {
-        anyhow::bail!("database_url user must be {APP_ROLE}, got {username}");
-    }
-    let password = percent_decode(app.password().unwrap_or(""));
-    let database = app
-        .path()
-        .trim_start_matches('/')
-        .split('?')
-        .next()
-        .unwrap_or("")
-        .to_owned();
-    if database.is_empty() {
-        anyhow::bail!("database_url is missing a database name");
-    }
-    let db = app_url_parts_ok(&username)?;
-    let _ = db;
-    let admin = sea_orm::Database::connect(admin_url).await?;
-    if password.contains("$lariv_rls_role$") {
-        anyhow::bail!("app role password cannot contain the setup delimiter");
-    }
-    let create_role = format!(
-        "DO $lariv_rls_role$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = {role}) THEN
-                CREATE ROLE {role_ident} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD {password};
-            ELSE
-                ALTER ROLE {role_ident} WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD {password};
-            END IF;
-        END $lariv_rls_role$;",
-        role = quote_literal(APP_ROLE),
-        role_ident = quote_ident(APP_ROLE),
-        password = quote_literal(&password),
-    );
-    admin
-        .execute_raw(Statement::from_string(
-            DatabaseBackend::Postgres,
-            create_role,
-        ))
-        .await?;
-    let role = quote_ident(APP_ROLE);
-    let database = quote_ident(&database);
-    admin
-        .execute_raw(Statement::from_string(
-            DatabaseBackend::Postgres,
-            format!("GRANT CONNECT ON DATABASE {database} TO {role}"),
-        ))
-        .await?;
-    admin
-        .execute_raw(Statement::from_string(
-            DatabaseBackend::Postgres,
-            format!("GRANT USAGE ON SCHEMA public TO {role}"),
-        ))
-        .await?;
     Ok(())
 }
 
-fn app_url_parts_ok(username: &str) -> anyhow::Result<()> {
-    if !username
-        .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-    {
-        anyhow::bail!("refusing to create a role named {username}");
-    }
-    Ok(())
+/// Pool that may read every company. Login, catalog clone, and background jobs
+/// use it. The serving pool does not.
+pub async fn connect_privileged(url: &str) -> Result<DatabaseConnection, DbErr> {
+    let mut opt = ConnectOptions::new(url.to_owned());
+    opt.max_connections(10)
+        .min_connections(1)
+        .max_lifetime(Duration::from_secs(3600))
+        .idle_timeout(Duration::from_secs(900))
+        .sqlx_logging(false);
+    opt.map_sqlx_postgres_before_acquire(|conn, _meta| {
+        async move {
+            // Stay the login role. Request pools switch away from a superuser.
+            sqlx::query("RESET ROLE").execute(&mut *conn).await?;
+            sqlx::query("SELECT set_config('app.rls_bypass', '1', false)")
+                .execute(&mut *conn)
+                .await?;
+            Ok(true)
+        }
+        .boxed()
+    });
+    Database::connect(opt).await
 }
 
 fn session_hook<'c>(
@@ -163,6 +101,16 @@ fn session_hook<'c>(
     _meta: sqlx::pool::PoolConnectionMetadata,
 ) -> futures_util::future::BoxFuture<'c, Result<bool, sqlx::Error>> {
     async move {
+        // Set bypass before the company lookup. That query reads memberships, and
+        // boot still has to see every row. A request leaves the setting empty.
+        let bypass = BOOT_PRIVILEGED.load(Ordering::Acquire) || startup_user().is_some();
+        // Superusers never consult policies. Request work has to run as lariv_rls,
+        // which install.sql creates without SUPERUSER or BYPASSRLS.
+        assume_subject_role(&mut *conn, bypass).await?;
+        sqlx::query("SELECT set_config('app.rls_bypass', $1, false)")
+            .bind(if bypass { "1" } else { "" })
+            .execute(&mut *conn)
+            .await?;
         let actor = db_actor()
             .or_else(|| current_auth().map(|auth| auth.user.id))
             .or_else(startup_user);
@@ -190,31 +138,35 @@ fn session_hook<'c>(
             .bind(company_value)
             .execute(&mut *conn)
             .await?;
-        // Admin DB role always bypasses. Seed / serve-startup also bypass while the
-        // startup actor is set so migration-like DML is not blocked by policies.
-        let role: (String,) = sea_orm::sqlx::query_as("SELECT current_user")
-            .fetch_one(&mut *conn)
-            .await?;
-        let bypass = role.0 != APP_ROLE || startup_user().is_some();
-        sqlx::query("SELECT set_config('app.rls_bypass', $1, false)")
-            .bind(if bypass { "1" } else { "" })
-            .execute(&mut *conn)
-            .await?;
         Ok(true)
     }
     .boxed()
 }
 
-fn percent_decode(value: &str) -> String {
-    percent_encoding::percent_decode_str(value)
-        .decode_utf8_lossy()
-        .into_owned()
-}
-
-fn quote_ident(value: &str) -> String {
-    format!("\"{}\"", value.replace('"', "\"\""))
-}
-
-fn quote_literal(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
+/// Request sessions must not be a role that skips row-level security.
+///
+/// `RESET ROLE` on boot and on the privileged pool keeps migrations on the
+/// login role. A login that already has neither superuser nor `BYPASSRLS` is
+/// left as itself.
+async fn assume_subject_role(
+    conn: &mut sqlx::postgres::PgConnection,
+    bypass: bool,
+) -> Result<(), sqlx::Error> {
+    if bypass {
+        sqlx::query("RESET ROLE").execute(&mut *conn).await?;
+        return Ok(());
+    }
+    let (skips_rls,): (bool,) = sqlx::query_as(
+        "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = session_user",
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+    if skips_rls {
+        sqlx::query("SET ROLE lariv_rls")
+            .execute(&mut *conn)
+            .await?;
+    } else {
+        sqlx::query("RESET ROLE").execute(&mut *conn).await?;
+    }
+    Ok(())
 }

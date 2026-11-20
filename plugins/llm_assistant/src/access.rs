@@ -8,6 +8,8 @@ use lariv_core::apps::{AppsCapability, AppsRegistrar};
 use lariv_plugin_bank_accounts::routes::{BankAccountsMutate, BankAccountsView};
 use lariv_plugin_companies::routes::{CompaniesMembersMutate, CompaniesMutate, CompaniesView};
 use lariv_plugin_contacts::routes::{ContactsMutate, ContactsView};
+use lariv_plugin_crm::routes::CustomerSelect;
+use lariv_plugin_customer::routes::CustomerMutate;
 use lariv_plugin_filesystem::apps::FILESYSTEM_APP_KEY;
 use lariv_plugin_filesystem::routes::FilesystemPermissions;
 use lariv_plugin_finance_accounts::{
@@ -106,6 +108,8 @@ impl RoleAuthorizationRegistrar for RoleHook {
             .patch::<CompaniesMembersMutate>(allow_company)
             .patch::<ContactsView>(allow_company)
             .patch::<ContactsMutate>(allow_company)
+            .patch::<CustomerSelect>(allow_company)
+            .patch::<CustomerMutate>(allow_company)
             .patch::<ImportAdmin>(allow_company)
             .patch::<ExportAdmin>(allow_company)
             .patch::<FilesystemPermissions>(allow_company)

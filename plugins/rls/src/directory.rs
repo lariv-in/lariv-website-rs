@@ -8,15 +8,13 @@ use lariv_plugin_users::error::UsersError;
 use lariv_plugin_users::password;
 use lariv_plugin_users::role_authorization::current_auth;
 use lariv_plugin_users::roles::{Superuser, Unassigned};
-use sea_orm::{
-    ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, EntityTrait, Statement,
-};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Statement};
 use tokio::sync::OnceCell;
 
 use crate::catalog;
 
 struct Directory {
-    admin_url: String,
+    database_url: String,
     admin_email: String,
     admin: OnceCell<DatabaseConnection>,
 }
@@ -24,9 +22,9 @@ struct Directory {
 static DIRECTORY: OnceLock<Arc<Directory>> = OnceLock::new();
 static REGISTERED: Mutex<bool> = Mutex::new(false);
 
-pub fn register(admin_url: String, admin_email: String) {
+pub fn register(database_url: String, admin_email: String) {
     let directory = Arc::new(Directory {
-        admin_url,
+        database_url,
         admin_email,
         admin: OnceCell::new(),
     });
@@ -134,8 +132,29 @@ pub async fn backfill_admin() -> anyhow::Result<()> {
         if let Ok(company_id) = company_row.try_get::<i64>("", "id") {
             crate::bootstrap::set_startup_company(company_id);
             catalog::collapse_duplicate_catalog(admin, company_id).await?;
+            // Companies created before the catalog hook (or with only the GST
+            // fragment) need a full copy. clone_catalogs fills missing codes.
+            clone_catalogs_for_all(admin, company_id).await?;
             crate::indian::ensure_indian_defaults_for_all(admin, company_id).await?;
         }
+    }
+    Ok(())
+}
+
+async fn clone_catalogs_for_all(
+    db: &DatabaseConnection,
+    template_company: i64,
+) -> anyhow::Result<()> {
+    let rows = db
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT id FROM companies WHERE id <> $1 ORDER BY id",
+            [template_company.into()],
+        ))
+        .await?;
+    for row in rows {
+        let company_id: i64 = row.try_get("", "id")?;
+        catalog::clone_catalogs(db, template_company, company_id).await?;
     }
     Ok(())
 }
@@ -143,7 +162,7 @@ pub async fn backfill_admin() -> anyhow::Result<()> {
 impl Directory {
     async fn admin(&self) -> Result<&DatabaseConnection, UsersError> {
         self.admin
-            .get_or_try_init(|| Database::connect(self.admin_url.as_str()))
+            .get_or_try_init(|| crate::bootstrap::connect_privileged(self.database_url.as_str()))
             .await
             .map_err(|err| UsersError::Other(err.into()))
     }
