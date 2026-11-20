@@ -2,7 +2,9 @@
 //!
 //! The process uses one database login: whoever `database_url` names. Boot sets
 //! `app.rls_bypass` until serve startup finishes. Request checkouts do not.
-//! A superuser login skips policies, so those request checkouts `SET ROLE lariv_rls`.
+//! The installing login owns the tables. Request checkouts `SET ROLE lariv_rls`
+//! so that login stays exempt (Cloud SQL is not a superuser; FORCE RLS would
+//! otherwise apply to every request) while handler queries stay under the policies.
 
 use std::sync::Once;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
@@ -169,11 +171,12 @@ fn missing_rls_function(err: &sqlx::Error) -> bool {
     }
 }
 
-/// Request sessions must not be a role that skips row-level security.
+/// Request sessions run as `lariv_rls`, which does not own the tables.
 ///
 /// `RESET ROLE` on boot and on the privileged pool keeps migrations on the
-/// login role. A login that already has neither superuser nor `BYPASSRLS` is
-/// left as itself.
+/// installing login. That login is exempt: a superuser skips policies, and
+/// Cloud SQL's non-superuser owner is treated as bypass by `rls_is_bypass`.
+/// Leaving a request on that login would exempt it too.
 async fn assume_subject_role(
     conn: &mut sqlx::postgres::PgConnection,
     bypass: bool,
@@ -182,17 +185,6 @@ async fn assume_subject_role(
         sqlx::query("RESET ROLE").execute(&mut *conn).await?;
         return Ok(());
     }
-    let (skips_rls,): (bool,) = sqlx::query_as(
-        "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = session_user",
-    )
-    .fetch_one(&mut *conn)
-    .await?;
-    if skips_rls {
-        sqlx::query("SET ROLE lariv_rls")
-            .execute(&mut *conn)
-            .await?;
-    } else {
-        sqlx::query("RESET ROLE").execute(&mut *conn).await?;
-    }
+    sqlx::query("SET ROLE lariv_rls").execute(&mut *conn).await?;
     Ok(())
 }

@@ -2,7 +2,9 @@
 -- Policies are forced, so they apply to the connecting role even when that role
 -- owns the tables. Boot and privileged pools set app.rls_bypass (see rls_is_bypass).
 -- Superusers and roles with BYPASSRLS still skip policies; that is Postgres.
--- Request checkouts SET ROLE to lariv_rls when the login role would skip them.
+-- The installing login is also exempt (see rls_is_bypass): Cloud SQL's user owns
+-- the tables and is not a superuser, so FORCE RLS would reject its writes.
+-- Request checkouts SET ROLE lariv_rls, which is not that login.
 
 CREATE OR REPLACE FUNCTION rls_current_user_id()
 RETURNS bigint
@@ -91,24 +93,46 @@ BEGIN
 END
 $fn$;
 
--- True when the pool hook stamped app.rls_bypass (boot, seed, or a privileged pool).
+-- Who installed the policies. Cloud SQL's login owns the tables and is not a
+-- superuser, so FORCE ROW LEVEL SECURITY applies to it. A database superuser
+-- skips policies anyway. Request checkouts SET ROLE lariv_rls, which makes
+-- current_user differ from this role.
+CREATE TABLE IF NOT EXISTS rls_install (
+    id int PRIMARY KEY,
+    rolname text NOT NULL,
+    CONSTRAINT rls_install_singleton CHECK (id = 1)
+);
+INSERT INTO rls_install (id, rolname)
+VALUES (1, current_user)
+ON CONFLICT (id) DO UPDATE SET rolname = EXCLUDED.rolname;
+
+-- True for boot, seed, the privileged pool, and security-definer helpers that
+-- run as the installing role. False for lariv_rls and any other login.
 CREATE OR REPLACE FUNCTION rls_is_bypass()
 RETURNS boolean
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 AS $fn$
+DECLARE
+    installer text;
 BEGIN
     BEGIN
         -- An empty setting is not a bypass. NULL IN (...) is NULL, and
         -- NOT NULL skips the non-superuser company fallback.
-        RETURN COALESCE(
+        IF COALESCE(
             NULLIF(current_setting('app.rls_bypass', true), '') IN ('1', 'true', 'on'),
             false
-        );
+        ) THEN
+            RETURN true;
+        END IF;
     EXCEPTION
         WHEN OTHERS THEN
-            RETURN false;
+            NULL;
     END;
+    SELECT rolname INTO installer FROM rls_install WHERE id = 1;
+    RETURN installer IS NOT NULL
+        AND current_user = installer
+        AND session_user = installer;
 END
 $fn$;
 
@@ -1153,6 +1177,7 @@ BEGIN
               'seaql_migrations',
               'roles',
               'rls_owner_tables',
+              'rls_install',
               'companies',
               'company_memberships',
               'company_user_prefs'
@@ -1488,7 +1513,8 @@ BEGIN
             END IF;
             EXECUTE format(
                 'CREATE POLICY rls_select ON %I FOR SELECT USING (
-                    (company_id IS NULL AND rls_is_superuser())
+                    rls_is_bypass()
+                    OR (company_id IS NULL AND rls_is_superuser())
                     OR (
                         company_id IS NOT NULL
                         AND company_id = rls_current_company_id()
@@ -1499,7 +1525,8 @@ BEGIN
             );
             EXECUTE format(
                 'CREATE POLICY rls_delete ON %I FOR DELETE USING (
-                    (company_id IS NULL AND rls_is_superuser())
+                    rls_is_bypass()
+                    OR (company_id IS NULL AND rls_is_superuser())
                     OR (
                         company_id IS NOT NULL
                         AND company_id = rls_current_company_id()
@@ -1816,19 +1843,22 @@ BEGIN
         EXECUTE $pol$
             CREATE POLICY rls_select ON company_user_prefs
             FOR SELECT
-            USING (user_id = rls_current_user_id())
+            USING (rls_is_bypass() OR user_id = rls_current_user_id())
         $pol$;
         EXECUTE $pol$
             CREATE POLICY rls_update ON company_user_prefs
             FOR UPDATE
-            USING (user_id = rls_current_user_id())
+            USING (rls_is_bypass() OR user_id = rls_current_user_id())
             WITH CHECK (
-                user_id = rls_current_user_id()
-                AND (
-                    (active_company_id IS NULL AND rls_is_superuser())
-                    OR (
-                        active_company_id IS NOT NULL
-                        AND rls_is_company_member(active_company_id)
+                rls_is_bypass()
+                OR (
+                    user_id = rls_current_user_id()
+                    AND (
+                        (active_company_id IS NULL AND rls_is_superuser())
+                        OR (
+                            active_company_id IS NOT NULL
+                            AND rls_is_company_member(active_company_id)
+                        )
                     )
                 )
             )
@@ -1836,18 +1866,21 @@ BEGIN
         EXECUTE $pol$
             CREATE POLICY rls_delete ON company_user_prefs
             FOR DELETE
-            USING (user_id = rls_current_user_id())
+            USING (rls_is_bypass() OR user_id = rls_current_user_id())
         $pol$;
         EXECUTE $pol$
             CREATE POLICY rls_insert ON company_user_prefs
             FOR INSERT
             WITH CHECK (
-                user_id = rls_current_user_id()
-                AND (
-                    (active_company_id IS NULL AND rls_is_superuser())
-                    OR (
-                        active_company_id IS NOT NULL
-                        AND rls_is_company_member(active_company_id)
+                rls_is_bypass()
+                OR (
+                    user_id = rls_current_user_id()
+                    AND (
+                        (active_company_id IS NULL AND rls_is_superuser())
+                        OR (
+                            active_company_id IS NOT NULL
+                            AND rls_is_company_member(active_company_id)
+                        )
                     )
                 )
             )
@@ -2014,6 +2047,13 @@ BEGIN
             grantee
         );
     END LOOP;
+    -- The blanket table grant would let lariv_rls rewrite the installer role
+    -- and make rls_is_bypass() true for requests.
+    IF to_regclass('public.rls_install') IS NOT NULL
+       AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lariv_rls')
+    THEN
+        EXECUTE 'REVOKE INSERT, UPDATE, DELETE ON rls_install FROM lariv_rls';
+    END IF;
 END
 $fn$;
 

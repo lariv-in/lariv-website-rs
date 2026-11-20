@@ -3,7 +3,9 @@
 //! Call [`prepare_database`] before [`lariv_core::app::App::load_config`] so every
 //! checkout stamps `app.user_id`. The configured database user is the only login.
 //! Boot (migrations, seeds, serve startup) sets `app.rls_bypass`; requests do not.
-//! When that login is a superuser, request checkouts `SET ROLE lariv_rls`.
+//! Request checkouts `SET ROLE lariv_rls`. The installing login owns the tables
+//! and stays exempt; a Cloud SQL login is not a superuser, so leaving requests
+//! on it would skip every policy.
 
 mod bootstrap;
 mod catalog;
