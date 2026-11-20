@@ -101,12 +101,12 @@ fn session_hook<'c>(
     _meta: sqlx::pool::PoolConnectionMetadata,
 ) -> futures_util::future::BoxFuture<'c, Result<bool, sqlx::Error>> {
     async move {
-        // Set bypass before the company lookup. That query reads memberships, and
-        // boot still has to see every row. A request leaves the setting empty.
+        // Stay the login role while stamping GUCs and resolving the company.
+        // load_config opens the pool before migrations install the RLS functions,
+        // and lariv_rls only exists after install.sql. Request traffic switches
+        // to lariv_rls after the stamps so policies apply to handler queries.
         let bypass = BOOT_PRIVILEGED.load(Ordering::Acquire) || startup_user().is_some();
-        // Superusers never consult policies. Request work has to run as lariv_rls,
-        // which install.sql creates without SUPERUSER or BYPASSRLS.
-        assume_subject_role(&mut *conn, bypass).await?;
+        sqlx::query("RESET ROLE").execute(&mut *conn).await?;
         sqlx::query("SELECT set_config('app.rls_bypass', $1, false)")
             .bind(if bypass { "1" } else { "" })
             .execute(&mut *conn)
@@ -126,21 +126,47 @@ fn session_hook<'c>(
         {
             id.to_string()
         } else {
-            let row: Option<(Option<i64>,)> =
-                sea_orm::sqlx::query_as("SELECT rls_resolve_active_company()")
-                    .fetch_optional(&mut *conn)
-                    .await?;
-            row.and_then(|(id,)| id)
-                .map(|id| id.to_string())
-                .unwrap_or_default()
+            resolve_active_company(&mut *conn).await?
         };
         sqlx::query("SELECT set_config('app.company_id', $1, false)")
             .bind(company_value)
             .execute(&mut *conn)
             .await?;
+        assume_subject_role(&mut *conn, bypass).await?;
         Ok(true)
     }
     .boxed()
+}
+
+/// Resolve `app.company_id` from prefs / memberships.
+///
+/// Missing function (pool opened before `install.sql`) leaves the company unset
+/// instead of failing every checkout.
+async fn resolve_active_company(
+    conn: &mut sqlx::postgres::PgConnection,
+) -> Result<String, sqlx::Error> {
+    match sea_orm::sqlx::query_as::<_, (Option<i64>,)>("SELECT public.rls_resolve_active_company()")
+        .fetch_optional(&mut *conn)
+        .await
+    {
+        Ok(row) => Ok(row
+            .and_then(|(id,)| id)
+            .map(|id| id.to_string())
+            .unwrap_or_default()),
+        Err(err) if missing_rls_function(&err) => Ok(String::new()),
+        Err(err) => Err(err),
+    }
+}
+
+fn missing_rls_function(err: &sqlx::Error) -> bool {
+    match err {
+        sqlx::Error::Database(db) => {
+            db.code().is_some_and(|code| code == "42883")
+                || db.message().contains("rls_resolve_active_company")
+                    && db.message().contains("does not exist")
+        }
+        _ => false,
+    }
 }
 
 /// Request sessions must not be a role that skips row-level security.
