@@ -30,38 +30,64 @@ EXCEPTION
 END
 $fn$;
 
+-- Reads of users from these helpers set app.rls_users for that statement only.
+-- FORCE ROW LEVEL SECURITY applies to the table owner, and Cloud SQL's login
+-- is not a superuser, so a helper query would re-enter the users policy.
+-- The policy allows the read while the setting is present. CASE short-circuits,
+-- so the helper is not called again. The setting is cleared before return.
 CREATE OR REPLACE FUNCTION rls_is_superuser()
 RETURNS boolean
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SECURITY DEFINER
 SET search_path = public
 AS $fn$
 DECLARE
     uid bigint := rls_current_user_id();
+    ok boolean;
 BEGIN
     IF uid IS NULL THEN
         RETURN false;
     END IF;
-    RETURN EXISTS (
-        SELECT 1 FROM users u WHERE u.id = uid AND u.role = 'superuser'
-    );
+    PERFORM set_config('app.rls_users', '1', true);
+    BEGIN
+        ok := EXISTS (
+            SELECT 1 FROM users u WHERE u.id = uid AND u.role = 'superuser'
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            PERFORM set_config('app.rls_users', '', true);
+            RAISE;
+    END;
+    PERFORM set_config('app.rls_users', '', true);
+    RETURN COALESCE(ok, false);
 END
 $fn$;
 
--- Role column for a user, readable under the caller's policies would recurse.
+-- Role column for a user. Same app.rls_users bracket as rls_is_superuser.
 CREATE OR REPLACE FUNCTION rls_user_role(uid bigint)
 RETURNS text
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SECURITY DEFINER
 SET search_path = public
 AS $fn$
+DECLARE
+    role_name text;
 BEGIN
     IF uid IS NULL THEN
         RETURN NULL;
     END IF;
-    RETURN (SELECT u.role FROM users u WHERE u.id = uid);
+    PERFORM set_config('app.rls_users', '1', true);
+    BEGIN
+        role_name := (SELECT u.role FROM users u WHERE u.id = uid);
+    EXCEPTION
+        WHEN OTHERS THEN
+            PERFORM set_config('app.rls_users', '', true);
+            RAISE;
+    END;
+    PERFORM set_config('app.rls_users', '', true);
+    RETURN role_name;
 END
 $fn$;
 
@@ -513,13 +539,23 @@ $fn$;
 
 CREATE OR REPLACE FUNCTION rls_find_user_by_email(p_email text)
 RETURNS SETOF users
-LANGUAGE sql
-STABLE
+LANGUAGE plpgsql
+VOLATILE
 SECURITY DEFINER
 SET search_path = public
-AS $$
-    SELECT * FROM users WHERE email = p_email LIMIT 1
-$$;
+AS $fn$
+BEGIN
+    PERFORM set_config('app.rls_users', '1', true);
+    BEGIN
+        RETURN QUERY SELECT * FROM users WHERE email = p_email LIMIT 1;
+    EXCEPTION
+        WHEN OTHERS THEN
+            PERFORM set_config('app.rls_users', '', true);
+            RAISE;
+    END;
+    PERFORM set_config('app.rls_users', '', true);
+END
+$fn$;
 
 CREATE OR REPLACE FUNCTION rls_signup_user(
     p_name text,
@@ -537,31 +573,39 @@ AS $fn$
 DECLARE
     new_id bigint;
 BEGIN
-    INSERT INTO users (
-        created_at,
-        updated_at,
-        name,
-        email,
-        phone,
-        role,
-        password,
-        password_salt,
-        timezone,
-        last_login_time
-    )
-    VALUES (
-        now(),
-        now(),
-        p_name,
-        p_email,
-        p_phone,
-        'unassigned',
-        p_password,
-        p_salt,
-        COALESCE(NULLIF(p_timezone, ''), 'Asia/Kolkata'),
-        NULL
-    )
-    RETURNING id INTO new_id;
+    PERFORM set_config('app.rls_users', '1', true);
+    BEGIN
+        INSERT INTO users (
+            created_at,
+            updated_at,
+            name,
+            email,
+            phone,
+            role,
+            password,
+            password_salt,
+            timezone,
+            last_login_time
+        )
+        VALUES (
+            now(),
+            now(),
+            p_name,
+            p_email,
+            p_phone,
+            'unassigned',
+            p_password,
+            p_salt,
+            COALESCE(NULLIF(p_timezone, ''), 'Asia/Kolkata'),
+            NULL
+        )
+        RETURNING id INTO new_id;
+    EXCEPTION
+        WHEN OTHERS THEN
+            PERFORM set_config('app.rls_users', '', true);
+            RAISE;
+    END;
+    PERFORM set_config('app.rls_users', '', true);
     RETURN new_id;
 END
 $fn$;
@@ -1218,29 +1262,74 @@ BEGIN
             EXECUTE 'DROP POLICY IF EXISTS rls_delete ON users';
             -- Self, superuser, or anyone who shares a company membership
             -- (so company member lists / assignee labels can resolve names).
+            -- Boot and the privileged pool set app.rls_bypass. A database
+            -- superuser skips these policies; Cloud SQL's login does not, so
+            -- the admin seed's insert has to be allowed here. app.rls_users
+            -- is the helper bracket described above rls_is_superuser. CASE
+            -- is required: AND/OR do not skip the recursive role lookup.
             EXECUTE $pol$
                 CREATE POLICY rls_select ON users
                 FOR SELECT
                 USING (
-                    id = rls_current_user_id()
-                    OR rls_is_superuser()
-                    OR EXISTS (
-                        SELECT 1
-                        FROM company_memberships me
-                        JOIN company_memberships them
-                          ON them.company_id = me.company_id
-                        WHERE me.user_id = rls_current_user_id()
-                          AND them.user_id = users.id
-                    )
+                    CASE
+                        WHEN current_setting('app.rls_users', true) = '1' THEN true
+                        WHEN rls_is_bypass() THEN true
+                        WHEN id = rls_current_user_id() THEN true
+                        WHEN rls_is_superuser() THEN true
+                        ELSE EXISTS (
+                            SELECT 1
+                            FROM company_memberships me
+                            JOIN company_memberships them
+                              ON them.company_id = me.company_id
+                            WHERE me.user_id = rls_current_user_id()
+                              AND them.user_id = users.id
+                        )
+                    END
                 )
             $pol$;
             EXECUTE $pol$
                 CREATE POLICY rls_update ON users
                 FOR UPDATE
-                USING (id = rls_current_user_id())
+                USING (
+                    CASE
+                        WHEN current_setting('app.rls_users', true) = '1' THEN true
+                        WHEN rls_is_bypass() THEN true
+                        WHEN rls_is_superuser() THEN true
+                        ELSE id = rls_current_user_id()
+                    END
+                )
                 WITH CHECK (
-                    id = rls_current_user_id()
-                    AND role IS NOT DISTINCT FROM rls_user_role(id)
+                    CASE
+                        WHEN current_setting('app.rls_users', true) = '1' THEN true
+                        WHEN rls_is_bypass() THEN true
+                        WHEN rls_is_superuser() THEN true
+                        ELSE id = rls_current_user_id()
+                             AND role IS NOT DISTINCT FROM rls_user_role(id)
+                    END
+                )
+            $pol$;
+            EXECUTE $pol$
+                CREATE POLICY rls_insert ON users
+                FOR INSERT
+                WITH CHECK (
+                    CASE
+                        WHEN current_setting('app.rls_users', true) = '1' THEN true
+                        WHEN rls_is_bypass() THEN true
+                        WHEN rls_is_superuser() THEN true
+                        ELSE false
+                    END
+                )
+            $pol$;
+            EXECUTE $pol$
+                CREATE POLICY rls_delete ON users
+                FOR DELETE
+                USING (
+                    CASE
+                        WHEN current_setting('app.rls_users', true) = '1' THEN true
+                        WHEN rls_is_bypass() THEN true
+                        WHEN rls_is_superuser() THEN true
+                        ELSE false
+                    END
                 )
             $pol$;
             CONTINUE;
