@@ -1942,18 +1942,33 @@ REVOKE ALL ON FUNCTION rls_install_public_website_table(text) FROM PUBLIC;
 
 -- Login roles that skip row-level security SET ROLE here for request traffic.
 -- NOLOGIN: nothing connects as this role. The login in database_url stays put.
+-- SUPERUSER and BYPASSRLS may be named only by a real superuser. Cloud SQL's
+-- cloudsqlsuperuser has CREATEROLE and is not one, so ALTER ROLE ... NOSUPERUSER
+-- NOBYPASSRLS fails with "permission denied to alter role". Fresh roles already
+-- default to NOSUPERUSER NOBYPASSRLS.
 DO $role$
+DECLARE
+    caller_is_super boolean;
 BEGIN
-    IF NOT EXISTS (
+    SELECT rolsuper INTO caller_is_super
+    FROM pg_roles
+    WHERE rolname = current_user;
+    IF NOT COALESCE(caller_is_super, false) AND NOT EXISTS (
         SELECT 1 FROM pg_roles
-        WHERE rolname = current_user AND (rolsuper OR rolcreaterole)
+        WHERE rolname = current_user AND rolcreaterole
     ) THEN
         RETURN;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lariv_rls') THEN
-        CREATE ROLE lariv_rls NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
-    ELSE
+        IF COALESCE(caller_is_super, false) THEN
+            CREATE ROLE lariv_rls NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
+        ELSE
+            CREATE ROLE lariv_rls NOLOGIN NOINHERIT;
+        END IF;
+    ELSIF COALESCE(caller_is_super, false) THEN
         ALTER ROLE lariv_rls WITH NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
+    ELSE
+        ALTER ROLE lariv_rls WITH NOLOGIN NOINHERIT;
     END IF;
     EXECUTE format('GRANT lariv_rls TO %I', current_user);
 END
